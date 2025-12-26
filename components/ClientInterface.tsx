@@ -88,6 +88,7 @@ export const ClientInterface: React.FC = () => {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [validationAttempted, setValidationAttempted] = useState(false);
   const [showValidationHighlight, setShowValidationHighlight] = useState(false); 
+  const [isSubmitting, setIsSubmitting] = useState(false); 
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -223,10 +224,13 @@ export const ClientInterface: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!isFormValid) {
       setValidationAttempted(true);
       return;
     }
+
+    setIsSubmitting(true);
 
     const finalCar = { ...car, model: `${car.brand} ${car.model}`.trim() };
     const tempId = `temp-${Date.now()}`;
@@ -260,6 +264,8 @@ export const ClientInterface: React.FC = () => {
         console.error("Order creation failed", err);
         setOrders(prev => prev.filter(o => o.id !== tempId));
         alert("Ошибка при создании заказа. Проверьте интернет.");
+    } finally {
+        setIsSubmitting(false);
     }
   };
 
@@ -367,7 +373,7 @@ export const ClientInterface: React.FC = () => {
 
         if (!searchQuery) return true;
         const q = searchQuery.toLowerCase();
-        if (o.id.toLowerCase().includes(q)) return true;
+        if (String(o.id).toLowerCase().includes(q)) return true;
         if (o.vin.toLowerCase().includes(q)) return true;
         if (o.car?.model?.toLowerCase().includes(q)) return true;
         if (o.items.some(i => i.name.toLowerCase().includes(q))) return true;
@@ -554,7 +560,10 @@ export const ClientInterface: React.FC = () => {
             <button type="button" onClick={() => setItems([...items, { name: '', quantity: 1, color: '', category: 'Оригинал', refImage: '' }])} className="text-[9px] font-bold text-indigo-600 uppercase hover:underline flex items-center gap-1"><Plus size={10}/> Добавить деталь</button>
           </div>
           <div onMouseEnter={handleButtonHover} onMouseLeave={handleButtonLeave}>
-            <button type="submit" disabled={!isFormValid} className={`w-full py-3 rounded-xl font-black uppercase text-[11px] tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${isFormValid ? 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95' : 'bg-slate-300 text-slate-500'}`}><Send className="w-4 h-4" /> Отправить запрос</button>
+            <button type="submit" disabled={!isFormValid || isSubmitting} className={`w-full py-3 rounded-xl font-black uppercase text-[11px] tracking-widest shadow-xl transition-all flex items-center justify-center gap-3 ${isFormValid && !isSubmitting ? 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95' : 'bg-slate-300 text-slate-500'}`}>
+              {isSubmitting ? <Loader2 className="animate-spin w-4 h-4"/> : <Send className="w-4 h-4" />} 
+              {isSubmitting ? 'Отправка...' : 'Отправить запрос'}
+            </button>
           </div>
         </form>
       </section>

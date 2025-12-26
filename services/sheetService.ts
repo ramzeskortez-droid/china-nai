@@ -102,8 +102,8 @@ export class SheetService {
           const isProcessed = row.processed === 'Y';
           const carDetails = parsedItems.length > 0 ? (parsedItems[0] as any).car : undefined;
 
-          ordersMap.set(row.id, {
-            id: row.id,
+          ordersMap.set(String(row.id), {
+            id: String(row.id),
             type: RowType.ORDER,
             vin: row.vin,
             status: row.status as OrderStatus,
@@ -121,7 +121,7 @@ export class SheetService {
             isRefused: row.refusal === 'Y'
           });
         } else if (row.type === 'OFFER') {
-          offersList.push({ row, items: parsedItems });
+          offersList.push({ row: {...row, id: String(row.id), parentId: String(row.parentId)}, items: parsedItems });
         }
       });
 
@@ -164,12 +164,12 @@ export class SheetService {
     }
   }
 
-  private static async postData(payload: any): Promise<void> {
+  private static async postData(payload: any): Promise<any> {
     const rawUrl = getApiUrl();
     if (!rawUrl) throw new Error("API URL not set");
     const url = rawUrl.trim();
 
-    await fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       redirect: 'follow',
       headers: {
@@ -177,10 +177,16 @@ export class SheetService {
       },
       body: JSON.stringify(payload)
     });
+
+    try {
+        return await response.json();
+    } catch (e) {
+        return { status: 'ok_no_content' };
+    }
   }
 
   static async createOrder(vin: string, items: any[], clientName: string, car: any, clientPhone?: string): Promise<string> {
-    const orderId = `ORD-${Math.floor(Math.random() * 100000)}`;
+    // ID generates on Server Side now
     const itemsWithPhone = items.map((item, idx) => {
         if (idx === 0) {
             return { ...item, clientPhone, car };
@@ -191,10 +197,10 @@ export class SheetService {
     const payload = {
       action: 'create',
       order: {
-        id: orderId,
+        id: "PENDING", // Server will ignore this and generate new ID
         type: 'ORDER',
         status: 'ОТКРЫТ',
-        vin, // Pass empty string or N/A as decided in UI
+        vin,
         clientName,
         createdAt: new Date().toLocaleString('ru-RU'),
         location: 'РФ',
@@ -203,9 +209,13 @@ export class SheetService {
       }
     };
 
-    await this.postData(payload);
+    const response = await this.postData(payload);
     this.lastFetch = 0;
-    return orderId;
+    
+    if (response && response.orderId) {
+        return String(response.orderId);
+    }
+    throw new Error("Server did not return Order ID");
   }
 
   static async createOffer(orderId: string, sellerName: string, items: any[], vin: string, sellerPhone?: string): Promise<void> {

@@ -59,6 +59,10 @@ function doPost(e) {
     if (body.action === 'create' && body.order.type === 'ORDER') {
       const o = body.order;
       
+      // GENERATE NEW SEQUENTIAL ID
+      const newId = String(getNextId(sheet));
+      o.id = newId; // Override client provided ID
+
       // 1. Сначала создаем Лид в CRM, чтобы получить ID
       var b24Result = addLeadWithTg(o);
       
@@ -82,6 +86,10 @@ function doPost(e) {
       
       const subSheet = doc.getSheetByName('Subscribers');
       broadcastMessage(formatNewOrderMessage(o, b24Result), subSheet);
+
+      formatSheetStyles(sheet);
+      formatRows(sheet); 
+      return response({status: 'ok', orderId: newId});
     } 
     // --- CREATE OFFER ---
     else if (body.action === 'create' && body.order.type === 'OFFER') {
@@ -852,6 +860,16 @@ function broadcastMessage(html, subSheet) {
 }
 
 function response(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
+function getNextId(sheet) {
+  const data = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues();
+  let max = 0;
+  for (let i = 0; i < data.length; i++) {
+    const val = parseInt(data[i][0]);
+    if (!isNaN(val) && val > max) max = val;
+  }
+  return max + 1;
+}
+
 function closeOrderInSheet(sheet, orderId) {
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) { if (String(data[i][0]) === String(orderId) || String(data[i][1]) === String(orderId)) { sheet.getRange(i + 1, 4).setValue('ЗАКРЫТ'); } }
