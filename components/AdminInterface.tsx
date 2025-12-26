@@ -170,7 +170,7 @@ export const AdminInterface: React.FC = () => {
 
   // --- ACTIONS ---
 
-  const handleUpdateRank = async (offerId: string, itemName: string, currentRank: RankType, vin: string, adminPrice?: number, adminCurrency?: Currency, adminComment?: string) => {
+  const handleUpdateRank = async (offerId: string, itemName: string, currentRank: RankType, vin: string, adminPrice?: number, adminCurrency?: Currency, adminComment?: string, deliveryRate?: number) => {
       interactionLock.current = Date.now();
       const newAction = currentRank === 'ЛИДЕР' || currentRank === 'LEADER' ? 'RESET' : undefined;
       
@@ -184,7 +184,7 @@ export const AdminInterface: React.FC = () => {
                   items: off.items.map(i => {
                       if (i.name === itemName) {
                           if (off.id === offerId) {
-                              return { ...i, rank: newAction === 'RESET' ? 'РЕЗЕРВ' : 'ЛИДЕР' as RankType, adminPrice, adminCurrency, adminComment };
+                              return { ...i, rank: newAction === 'RESET' ? 'РЕЗЕРВ' : 'ЛИДЕР' as RankType, adminPrice, adminCurrency, adminComment, deliveryRate };
                           } else {
                               // If setting leader, reset others
                               if (!newAction) return { ...i, rank: 'РЕЗЕРВ' as RankType };
@@ -197,7 +197,7 @@ export const AdminInterface: React.FC = () => {
       }));
 
       try {
-          await SheetService.updateRank(vin, itemName, offerId, adminPrice, adminCurrency, newAction, adminComment);
+          await SheetService.updateRank(vin, itemName, offerId, adminPrice, adminCurrency, newAction, adminComment, deliveryRate);
           addLog(`Обновлен ранг для ${itemName}`, 'success');
       } catch (e) {
           addLog("Ошибка обновления ранга", "error");
@@ -554,10 +554,25 @@ export const AdminInterface: React.FC = () => {
                                                      ) : (
                                                          <>
                                                             <span className="font-black text-sm uppercase tracking-wide">{item.AdminName || item.name}</span>
-                                                            <span className="text-[10px] font-bold opacity-60">({item.AdminQuantity || item.quantity} ШТ)</span>
+                                                            {item.category && <span className="ml-2 bg-blue-600 text-white px-1.5 py-0.5 rounded text-[9px] font-bold uppercase">{item.category}</span>}
+                                                            <span className="text-[10px] font-bold opacity-60 ml-2">({item.AdminQuantity || item.quantity} ШТ)</span>
                                                          </>
                                                      )}
                                                  </div>
+                                             </div>
+
+                                             {/* OFFERS HEADER (DESKTOP) */}
+                                             <div className="hidden md:grid grid-cols-[2fr_1fr_0.5fr_0.5fr_0.5fr_0.5fr_1.5fr_1fr_0.8fr_1fr] gap-2 px-3 py-2 bg-slate-50 border-b border-slate-100 text-[8px] font-bold text-slate-400 uppercase tracking-wider items-center">
+                                                 <div className="text-left">Поставщик</div>
+                                                 <div>Цена</div>
+                                                 <div>Шт</div>
+                                                 <div>Вес</div>
+                                                 <div>Срок</div>
+                                                 <div>Фото</div>
+                                                 <div>Доставка</div>
+                                                 <div>Продажа</div>
+                                                 <div>Валюта</div>
+                                                 <div></div> {/* Hidden 'Выбор' label */}
                                              </div>
 
                                              {/* OFFERS FOR THIS ITEM */}
@@ -566,76 +581,106 @@ export const AdminInterface: React.FC = () => {
                                                      itemOffers.map((off, oIdx) => {
                                                          const isLeader = off.item.rank === 'ЛИДЕР' || off.item.rank === 'LEADER';
                                                          return (
-                                                             <div key={oIdx} className={`flex flex-col gap-3 p-3 rounded-lg border ${isLeader ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
-                                                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                                                                     {/* SUPPLIER & BASIC INFO */}
-                                                                     <div className="flex-grow">
-                                                                         <div className="flex items-center gap-3 mb-1">
-                                                                             <span className="font-black text-xs uppercase text-slate-800">{off.clientName}</span>
-                                                                             {off.item.photoUrl && (
-                                                                                 <a href={off.item.photoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-md text-[9px] font-black uppercase hover:bg-blue-100 transition-colors" title="Открыть фото">
-                                                                                     <FileText size={10}/> Фото
-                                                                                 </a>
-                                                                             )}
-                                                                         </div>
-                                                                         <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-500">
-                                                                             <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-700">{off.item.sellerPrice} {off.item.sellerCurrency}</span>
-                                                                             <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{off.item.offeredQuantity} шт</span>
-                                                                             {off.item.weight && <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">⚖️ {off.item.weight}кг</span>}
-                                                                             {off.item.deliveryWeeks && <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-100">📅 {off.item.deliveryWeeks}нед.</span>}
-                                                                         </div>
-                                                                     </div>
+                                                             <div key={oIdx} className={`flex flex-col md:grid md:grid-cols-[2fr_1fr_0.5fr_0.5fr_0.5fr_0.5fr_1.5fr_1fr_0.8fr_1fr] gap-2 p-2 rounded-lg border items-center text-[10px] text-center ${isLeader ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
+                                                                 
+                                                                 {/* 1. SUPPLIER */}
+                                                                 <div className="font-black uppercase text-slate-800 truncate text-left" title={off.clientName}>
+                                                                     {off.clientName}
+                                                                 </div>
 
-                                                                     {/* ADMIN CONTROLS */}
-                                                                     <div className="flex items-center gap-2">
-                                                                         <input 
-                                                                            type="number" 
-                                                                            placeholder={isLeader ? String(off.item.adminPrice || off.item.sellerPrice) : "Цена продажи"} 
-                                                                            className="w-24 px-2 py-1.5 border border-slate-200 rounded text-center text-[10px] font-bold outline-none focus:border-indigo-500 bg-white text-slate-900"
-                                                                            onChange={(e) => off.item.adminPrice = Number(e.target.value)}
-                                                                            defaultValue={off.item.adminPrice || off.item.sellerPrice}
-                                                                         />
-                                                                         <select 
-                                                                            className="w-16 px-1 py-1.5 border border-slate-200 rounded text-[10px] font-bold outline-none bg-white text-slate-900"
-                                                                            defaultValue={off.item.adminCurrency || off.item.sellerCurrency}
-                                                                            onChange={(e) => off.item.adminCurrency = e.target.value as Currency}
-                                                                         >
-                                                                             <option value="CNY">CNY</option>
-                                                                             <option value="RUB">RUB</option>
-                                                                             <option value="USD">USD</option>
-                                                                         </select>
+                                                                 {/* 2. PRICE */}
+                                                                 <div className="font-bold text-slate-600">
+                                                                     {off.item.sellerPrice} {off.item.sellerCurrency}
+                                                                 </div>
+
+                                                                 {/* 3. QTY */}
+                                                                 <div className="font-bold text-slate-500">
+                                                                     {off.item.offeredQuantity} шт
+                                                                 </div>
+
+                                                                 {/* 4. WEIGHT */}
+                                                                 <div className="text-indigo-600 font-bold">
+                                                                     {off.item.weight ? `${off.item.weight} кг` : '-'}
+                                                                 </div>
+
+                                                                 {/* 5. TERM */}
+                                                                 <div className="text-amber-600 font-bold">
+                                                                     {off.item.deliveryWeeks ? `${off.item.deliveryWeeks} н.` : '-'}
+                                                                 </div>
+
+                                                                 {/* 6. PHOTO (Moved Here) */}
+                                                                 <div className="flex justify-center">
+                                                                     {off.item.photoUrl ? (
+                                                                         <a href={off.item.photoUrl} target="_blank" rel="noreferrer" className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors">
+                                                                             <FileText size={14}/>
+                                                                         </a>
+                                                                     ) : <span className="text-slate-200">-</span>}
+                                                                 </div>
+
+                                                                 {/* 7. DELIVERY RATE SELECT (Moved Here) */}
+                                                                 <div>
+                                                                     <select
+                                                                        className="w-full px-1 py-1 border border-slate-200 rounded text-[9px] font-bold outline-none bg-white text-slate-900 truncate"
+                                                                        defaultValue={off.item.deliveryRate || 0}
+                                                                        onChange={(e) => off.item.deliveryRate = Number(e.target.value)}
+                                                                        disabled={order.isProcessed}
+                                                                     >
+                                                                         <option value="0">---</option>
+                                                                         <option value="10">10 ₽</option>
+                                                                         <option value="100">100 ₽</option>
+                                                                         <option value="1000">1000 ₽</option>
+                                                                     </select>
+                                                                 </div>
+
+                                                                 {/* 8. ADMIN PRICE */}
+                                                                 <div>
+                                                                     <input 
+                                                                        type="number" 
+                                                                        className="w-full px-1 py-1 border border-slate-200 rounded text-center font-bold outline-none focus:border-indigo-500 bg-white"
+                                                                        onChange={(e) => off.item.adminPrice = Number(e.target.value)}
+                                                                        defaultValue={off.item.adminPrice || off.item.sellerPrice}
+                                                                        disabled={order.isProcessed}
+                                                                     />
+                                                                 </div>
+
+                                                                 {/* 9. CURRENCY */}
+                                                                 <div>
+                                                                     <select 
+                                                                        className="w-full px-1 py-1 border border-slate-200 rounded font-bold outline-none bg-white"
+                                                                        defaultValue={off.item.adminCurrency || off.item.sellerCurrency}
+                                                                        onChange={(e) => off.item.adminCurrency = e.target.value as Currency}
+                                                                        disabled={order.isProcessed}
+                                                                     >
+                                                                         <option value="CNY">CNY</option>
+                                                                         <option value="RUB">RUB</option>
+                                                                         <option value="USD">USD</option>
+                                                                     </select>
+                                                                 </div>
+
+                                                                 {/* 10. BUTTON */}
+                                                                 <div>
+                                                                     {order.isProcessed ? (
+                                                                         isLeader ? <Check size={16} className="text-emerald-500 mx-auto"/> : <span className="text-slate-200">-</span>
+                                                                     ) : (
                                                                          <button 
-                                                                            onClick={() => {
-                                                                                handleUpdateRank(
-                                                                                    off.offerId, 
-                                                                                    item.name, 
-                                                                                    off.item.rank || '', 
-                                                                                    order.vin,
-                                                                                    off.item.adminPrice,
-                                                                                    off.item.adminCurrency,
-                                                                                    off.item.adminComment
-                                                                                );
-                                                                            }}
-                                                                            className={`w-24 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${isLeader ? 'bg-emerald-500 text-white shadow-emerald-200 shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                                                            onClick={() => handleUpdateRank(off.offerId, item.name, off.item.rank || '', order.vin, off.item.adminPrice, off.item.adminCurrency, off.item.adminComment, off.item.deliveryRate)}
+                                                                            className={`w-full py-1.5 rounded text-[8px] font-black uppercase transition-all ${isLeader ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                                                                          >
                                                                              {isLeader ? 'ЛИДЕР' : 'ВЫБРАТЬ'}
                                                                          </button>
-                                                                     </div>
+                                                                     )}
                                                                  </div>
 
-                                                                 {/* COMMENT INPUT (Visible if not leader or always for feedback) */}
-                                                                 <div className="relative">
+                                                                 {/* COMMENT ROW (Full width below) */}
+                                                                 <div className="col-span-full md:col-span-full mt-1">
                                                                      <input 
                                                                         type="text" 
                                                                         maxLength={90}
-                                                                        placeholder="Комментарий к этой позиции (видят поставщик и клиент)..."
-                                                                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-100 rounded text-[9px] font-bold outline-none focus:border-indigo-200"
+                                                                        placeholder="Комментарий (feedback)..."
+                                                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-100 rounded text-[9px] text-slate-500 focus:text-slate-900 focus:bg-white focus:border-indigo-200 transition-all outline-none"
                                                                         defaultValue={off.item.adminComment || ""}
                                                                         onChange={(e) => off.item.adminComment = e.target.value}
                                                                      />
-                                                                     <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[7px] font-bold text-slate-300 uppercase">
-                                                                         Feedback
-                                                                     </div>
                                                                  </div>
                                                              </div>
                                                          );

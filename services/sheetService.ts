@@ -23,6 +23,7 @@ interface SheetRow {
   processed: string; // Col L (11) (Y/N)
   readyToBuy?: string; // Col M (12) (Y/N)
   refusal?: string; // Col N (13) (Y/N) - Cancellation flag
+  workflowStatus?: string; // Col O (14) - Status String
 }
 
 export class SheetService {
@@ -118,7 +119,8 @@ export class SheetService {
             car: carDetails,
             isProcessed: isProcessed,
             readyToBuy: row.readyToBuy === 'Y',
-            isRefused: row.refusal === 'Y'
+            isRefused: row.refusal === 'Y',
+            workflowStatus: row.workflowStatus as any // New Field
           });
         } else if (row.type === 'OFFER') {
           offersList.push({ row: {...row, id: String(row.id), parentId: String(row.parentId)}, items: parsedItems });
@@ -247,7 +249,7 @@ export class SheetService {
     this.lastFetch = 0;
   }
 
-  static async updateRank(vin: string, itemName: string, offerId: string, adminPrice?: number, adminCurrency?: Currency, actionType?: 'RESET', adminComment?: string): Promise<void> {
+  static async updateRank(vin: string, itemName: string, offerId: string, adminPrice?: number, adminCurrency?: Currency, actionType?: 'RESET', adminComment?: string, deliveryRate?: number): Promise<void> {
     await this.postData({
       action: 'update_rank',
       vin,
@@ -256,7 +258,8 @@ export class SheetService {
       adminPrice,
       adminCurrency,
       actionType, // New parameter to support unselecting leader
-      adminComment // New: Comment why not selected or additional info
+      adminComment, // New: Comment why not selected or additional info
+      deliveryRate // New: Selected delivery tariff
     });
     this.lastFetch = 0;
   }
@@ -292,6 +295,15 @@ export class SheetService {
       action: 'update_json',
       orderId,
       items: newItems
+    });
+    this.lastFetch = 0;
+  }
+
+  static async updateWorkflowStatus(orderId: string, status: string): Promise<void> {
+    await this.postData({
+      action: 'update_workflow_status',
+      orderId,
+      status
     });
     this.lastFetch = 0;
   }

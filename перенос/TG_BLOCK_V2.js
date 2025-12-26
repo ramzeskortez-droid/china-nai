@@ -25,7 +25,7 @@ function doGet(e) {
     return response(rows.map(r => ({
       id: r[0], parentId: r[1], type: r[2], status: r[3], vin: r[4], 
       clientName: r[5], summary: r[6], json: r[7], rank: r[8], 
-      createdAt: r[9], location: r[10], processed: r[11], readyToBuy: r[12], refusal: r[13]
+      createdAt: r[9], location: r[10], processed: r[11], readyToBuy: r[12], refusal: r[13], workflowStatus: r[14]
     })));
   }
   return response({status: "alive", version: "4.9.2-admin-annul"});
@@ -51,7 +51,7 @@ function doPost(e) {
     }
 
     const sheet = getOrCreateSheet(doc, 'MarketData', [
-      'ID', 'Parent ID', 'Тип', 'Статус', 'VIN', 'Имя', 'Сводка', 'JSON', 'Детали/Цены', 'Дата', 'Локация', 'ОБРАБОТАН', 'ГОТОВ КУПИТЬ', 'ОТКАЗ'
+      'ID', 'Parent ID', 'Тип', 'Статус', 'VIN', 'Имя', 'Сводка', 'JSON', 'Детали/Цены', 'Дата', 'Локация', 'ОБРАБОТАН', 'ГОТОВ КУПИТЬ', 'ОТКАЗ', 'Workflow'
     ]);
     const body = contents;
 
@@ -77,8 +77,9 @@ function doPost(e) {
       
       const readableStatus = generateOrderSummary(o.items);
 
+      // Col 14 (O) = WorkflowStatus ('В обработке')
       const rowData = [
-        o.id, '', 'ORDER', o.status, o.vin, o.clientName, summary, itemsJson, readableStatus, formattedDate, o.location, 'N', 'N', 'N'
+        o.id, '', 'ORDER', o.status, o.vin, o.clientName, summary, itemsJson, readableStatus, formattedDate, o.location, 'N', 'N', 'N', 'В обработке'
       ];
       
       sheet.insertRowAfter(1);
@@ -101,7 +102,7 @@ function doPost(e) {
       o.id = newOfferId;
 
       const itemsJson = JSON.stringify(o.items);
-      const rowData = [o.id, o.parentId, 'OFFER', o.status, o.vin, o.clientName, 'Предложение', itemsJson, generateOfferSummary(o.items), (o.createdAt || '').replace(', ', '\n'), o.location, 'N', 'N', 'N'];
+      const rowData = [o.id, o.parentId, 'OFFER', o.status, o.vin, o.clientName, 'Предложение', itemsJson, generateOfferSummary(o.items), (o.createdAt || '').replace(', ', '\n'), o.location, 'N', 'N', 'N', ''];
       const insertionIndex = findBlockEndIndex(sheet, o.parentId);
       sheet.insertRowAfter(insertionIndex);
       sheet.getRange(insertionIndex + 1, 1, 1, rowData.length).setValues([rowData]);
@@ -119,6 +120,7 @@ function doPost(e) {
     // --- FORM CP ---
     else if (body.action === 'form_cp') {
       updateStatusById(sheet, body.orderId, 12, 'Y'); 
+      updateStatusById(sheet, body.orderId, 15, 'КП готово'); // Col O (15th column, index 14)
       const orderRow = findOrderRowById(sheet, body.orderId);
       const subSheet = doc.getSheetByName('Subscribers');
       
@@ -127,16 +129,24 @@ function doPost(e) {
     // --- CONFIRM PURCHASE ---
     else if (body.action === 'confirm_purchase') {
       updateStatusById(sheet, body.orderId, 13, 'Y');
+      updateStatusById(sheet, body.orderId, 15, 'Готов купить'); // Col O
       const orderRow = findOrderRowById(sheet, body.orderId);
       if (orderRow) {
         const subSheet = doc.getSheetByName('Subscribers');
         broadcastMessage(formatPurchaseConfirmationMessage(body.orderId, orderRow), subSheet);
       }
     }
+    // --- UPDATE WORKFLOW STATUS ---
+    else if (body.action === 'update_workflow_status') {
+       updateStatusById(sheet, body.orderId, 15, body.status); // Col O
+    }
     // --- REFUSE ORDER ---
     else if (body.action === 'refuse_order') {
        updateStatusById(sheet, body.orderId, 14, 'Y'); 
        updateStatusById(sheet, body.orderId, 4, 'ЗАКРЫТ');
+       // Set status based on source
+       const status = body.source === 'ADMIN' ? 'Аннулирован' : 'Отказ';
+       updateStatusById(sheet, body.orderId, 15, status); 
        
        if (body.reason) {
           const orderRow = findOrderRowById(sheet, body.orderId);
@@ -299,7 +309,7 @@ function propagateEditsToOffers(sheet, orderId, newOrderItems) {
 }
 
 function handleRankUpdate(sheet, body) {
-  const { vin, detailName, leadOfferId, adminPrice, adminCurrency, adminComment } = body;
+  const { vin, detailName, leadOfferId, adminPrice, adminCurrency, adminComment, deliveryRate } = body;
   const data = sheet.getDataRange().getValues();
   
   let parentId = null;
@@ -336,6 +346,7 @@ function handleRankUpdate(sheet, body) {
                         item.rank = 'ЛИДЕР';
                         if (adminPrice !== undefined) item.adminPrice = adminPrice;
                         if (adminCurrency !== undefined) item.adminCurrency = adminCurrency;
+                        if (deliveryRate !== undefined) item.deliveryRate = deliveryRate; // SAVE RATE
                         item.adminComment = adminComment || ""; 
                         changed = true;
                     } else {

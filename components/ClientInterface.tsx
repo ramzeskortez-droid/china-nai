@@ -4,7 +4,7 @@ import { SheetService } from '../services/sheetService';
 import { Order, OrderStatus, PartCategory } from '../types';
 import { Pagination } from './Pagination';
 import { 
-  Send, Plus, Trash2, Zap, CheckCircle2, Car, MoreHorizontal, Calculator, Search, Loader2, ChevronDown, ShoppingCart, Archive, UserCircle2, LogOut, ShieldCheck, Phone, X, Calendar, Clock, Hash, Package, Ban, RefreshCw, AlertCircle, ArrowUp, ArrowDown, ArrowUpDown
+  Send, Plus, Trash2, Zap, CheckCircle2, Car, MoreHorizontal, Calculator, Search, Loader2, ChevronDown, ShoppingCart, Archive, UserCircle2, LogOut, ShieldCheck, Phone, X, Calendar, Clock, Hash, Package, Ban, RefreshCw, AlertCircle, ArrowUp, ArrowDown, ArrowUpDown, FileText
 } from 'lucide-react';
 
 // --- DATA CONSTANTS ---
@@ -387,7 +387,7 @@ export const ClientInterface: React.FC = () => {
 
             switch (sortConfig.key) {
                 case 'id':
-                    aVal = a.id; bVal = b.id;
+                    aVal = Number(a.id); bVal = Number(b.id);
                     break;
                 case 'model':
                     aVal = a.car?.model || ''; bVal = b.car?.model || '';
@@ -603,6 +603,7 @@ export const ClientInterface: React.FC = () => {
             const winningItems = visibleOffers.flatMap(off => off.items.filter(i => i.rank === 'ЛИДЕР' || i.rank === 'LEADER'));
             const hasWinning = winningItems.length > 0;
             const totalSum = winningItems.reduce((acc, item) => acc + ((item.adminPrice ?? item.sellerPrice ?? 0) * (item.offeredQuantity || item.quantity)), 0);
+            const totalDelivery = winningItems.reduce((acc, item) => acc + ((item.deliveryRate || 0) * (item.offeredQuantity || item.quantity)), 0);
             const symbol = getCurrencySymbol(winningItems[0]?.adminCurrency || winningItems[0]?.sellerCurrency || 'RUB');
 
             const orderDate = order.createdAt ? order.createdAt.split(/[\n,]/)[0] : '';
@@ -700,33 +701,54 @@ export const ClientInterface: React.FC = () => {
                                          const curSymbol = getCurrencySymbol(item.adminCurrency ?? item.sellerCurrency ?? 'RUB');
                                          const displayName = item.AdminName || item.name;
                                          const displayQty = item.AdminQuantity || item.offeredQuantity || item.quantity;
+                                         const deliveryCost = (item.deliveryRate || 0) * displayQty;
+                                         
                                          return (
-                                            <div key={idx} className="bg-white p-4 flex flex-col gap-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
-                                                <div className="flex justify-between items-start">
-                                                    <div className="flex items-start gap-4">
-                                                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-black shrink-0">{idx + 1}</div>
+                                            <div key={idx} className="bg-white border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                                                {/* TOP ROW: Name & Photo */}
+                                                <div className="p-4 pb-2 flex justify-between items-start">
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-black shrink-0">{idx + 1}</div>
                                                         <div>
-                                                            <span className="text-sm font-black text-slate-900 block uppercase tracking-tight leading-tight mb-1">{displayName}</span>
-                                                            <div className="flex flex-wrap items-center gap-2">
+                                                            <span className="text-sm font-black text-slate-900 block uppercase tracking-tight leading-tight">{displayName}</span>
+                                                            <div className="mt-1 flex items-center gap-2">
                                                                 <span className="text-[10px] font-bold text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded">{item.category}</span>
                                                                 <span className="text-[10px] font-black text-slate-700 uppercase bg-slate-100 px-2 py-0.5 rounded">{displayQty} шт</span>
-                                                                {item.weight && <span className="text-[10px] font-black text-indigo-600 uppercase bg-indigo-50 px-2 py-0.5 rounded">⚖️ {item.weight} кг</span>}
-                                                                {item.deliveryWeeks && <span className="text-[10px] font-black text-amber-600 uppercase bg-amber-50 px-2 py-0.5 rounded">📅 {item.deliveryWeeks} нед.</span>}
                                                             </div>
-                                                            {item.photoUrl && (
-                                                                <a href={item.photoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase hover:bg-blue-100 transition-colors">
-                                                                    <FileText size={12}/> Фото детали
-                                                                </a>
-                                                            )}
                                                         </div>
                                                     </div>
-                                                    <div className="text-right">
-                                                        <div className="text-sm font-black text-slate-900">{ (finalPrice * displayQty).toLocaleString() } {curSymbol}</div>
-                                                        <div className="text-[10px] text-slate-400 font-bold">{finalPrice.toLocaleString()} {curSymbol} / шт</div>
+                                                    <div className="flex flex-col items-end gap-2">
+                                                        {item.photoUrl && (
+                                                            <a href={item.photoUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase hover:bg-blue-100 transition-colors flex items-center gap-1">
+                                                                <FileText size={10}/> Фото
+                                                            </a>
+                                                        )}
+                                                        <div className="text-right">
+                                                            <div className="text-sm font-black text-slate-900">{(finalPrice * displayQty).toLocaleString()} {curSymbol}</div>
+                                                            <div className="text-[9px] text-slate-400 font-bold">{finalPrice} {curSymbol}/шт</div>
+                                                        </div>
                                                     </div>
                                                 </div>
+
+                                                {/* BOTTOM ROW: Delivery & Terms */}
+                                                <div className="px-4 pb-4 pt-2 grid grid-cols-2 gap-4">
+                                                    <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase block mb-0.5">Доставка (Тариф)</span>
+                                                        <div className="flex justify-between items-baseline">
+                                                            <span className="text-[10px] font-black text-slate-700 uppercase">
+                                                                {item.deliveryRate === 10 ? 'Стандарт' : item.deliveryRate === 100 ? 'Экспресс' : item.deliveryRate === 1000 ? 'VIP' : 'Базовый'}
+                                                            </span>
+                                                            <span className="text-[10px] font-black text-slate-900">{deliveryCost} ₽</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase block mb-0.5">Срок поставки</span>
+                                                        <span className="text-[10px] font-black text-slate-900 uppercase">{item.deliveryWeeks || '-'} недель</span>
+                                                    </div>
+                                                </div>
+
                                                 {item.adminComment && (
-                                                    <div className="ml-12 p-3 bg-amber-50 border border-amber-100 rounded-xl text-[10px] text-amber-800 flex items-start gap-2 italic">
+                                                    <div className="mx-4 mb-4 p-3 bg-amber-50 border border-amber-100 rounded-xl text-[10px] text-amber-800 flex items-start gap-2 italic">
                                                         <AlertCircle size={14} className="mt-0.5 shrink-0" />
                                                         <span><span className="font-black not-italic block mb-0.5">Комментарий менеджера:</span>{item.adminComment}</span>
                                                     </div>
@@ -740,9 +762,14 @@ export const ClientInterface: React.FC = () => {
                               <div className="bg-slate-900 text-white p-4 flex flex-wrap md:flex-nowrap justify-between items-center gap-4">
                                   <div className="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-4 w-full md:w-auto">
                                       {hasWinning && (
-                                          <div className="flex items-center gap-4 whitespace-nowrap">
-                                              <div className="flex items-center gap-2"><Calculator size={14} className="text-emerald-400"/><span className="font-black text-[10px] uppercase tracking-widest">Итого к оплате</span></div>
-                                              <div className="text-base font-black tracking-tight">{totalSum.toLocaleString()} {symbol}</div>
+                                          <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-4">
+                                              <div className="flex items-center gap-2"><Calculator size={14} className="text-emerald-400"/><span className="font-black text-[10px] uppercase tracking-widest">Итого к оплате:</span></div>
+                                              <div className="flex items-baseline gap-2">
+                                                  <span className="text-lg font-black tracking-tight">{totalSum.toLocaleString()} {symbol}</span>
+                                                  {totalDelivery > 0 && (
+                                                      <span className="text-xs font-bold text-slate-400 uppercase">+ {totalDelivery.toLocaleString()} ₽ (Доставка)</span>
+                                                  )}
+                                              </div>
                                           </div>
                                       )}
                                       

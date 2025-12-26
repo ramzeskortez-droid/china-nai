@@ -1,4 +1,3 @@
-
 export enum OrderStatus {
   OPEN = 'ОТКРЫТ',
   CLOSED = 'ЗАКРЫТ',
@@ -13,6 +12,17 @@ export enum RowType {
 export type RankType = 'LEADER' | 'RESERVE' | 'ЛИДЕР' | 'РЕЗЕРВ' | '';
 export type PartCategory = 'Оригинал' | 'Б/У' | 'Аналог';
 export type Currency = 'RUB' | 'USD' | 'CNY';
+
+export type WorkflowStatus = 
+  | 'В обработке' 
+  | 'КП готово' 
+  | 'Готов купить' 
+  | 'Подтверждение от поставщика' 
+  | 'Ожидает оплаты' 
+  | 'В пути' 
+  | 'Выполнен' 
+  | 'Аннулирован' 
+  | 'Отказ';
 
 export interface CarDetails {
   model: string;
@@ -60,6 +70,7 @@ export interface OrderItem {
   adminComment?: string; // НОВОЕ: Комментарий админа при отказе
   weight?: number; // НОВОЕ: Вес в кг
   deliveryWeeks?: number; // НОВОЕ: Срок в неделях
+  deliveryRate?: number; // НОВОЕ: Тариф доставки (руб)
   photoUrl?: string; // НОВОЕ: Ссылка на фото
   clientPhone?: string; // Телефон клиента (из заказа)
   sellerPhone?: string; // Телефон поставщика (из оффера)
@@ -89,4 +100,6 @@ export interface Order {
   isRefused?: boolean;
   // Новое поле: причина отказа
   refusalReason?: string;
+  // НОВОЕ: Единый статус процесса (Колонка O?)
+  workflowStatus?: WorkflowStatus;
 }

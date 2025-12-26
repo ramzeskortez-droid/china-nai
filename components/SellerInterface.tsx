@@ -265,7 +265,7 @@ export const SellerInterface: React.FC = () => {
 
             switch (sortConfig.key) {
                 case 'id':
-                    aVal = a.id; bVal = b.id;
+                    aVal = Number(a.id); bVal = Number(b.id);
                     break;
                 case 'brand':
                     // Extract Brand
