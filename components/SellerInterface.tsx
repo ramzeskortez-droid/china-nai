@@ -23,7 +23,15 @@ export const SellerInterface: React.FC = () => {
   const [tempAuth, setTempAuth] = useState({ name: '', phone: '' });
   const [phoneFlash, setPhoneFlash] = useState(false);
 
-  const [editingItems, setEditingItems] = useState<Record<string, { price: number; currency: Currency; offeredQty: number; refImage: string }>>({});
+  const [editingItems, setEditingItems] = useState<Record<string, { 
+    price: number; 
+    currency: Currency; 
+    offeredQty: number; 
+    refImage: string;
+    weight: number;
+    deliveryWeeks: number;
+    photoUrl: string;
+  }>>({});
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<'new' | 'processed'>('new');
@@ -320,7 +328,11 @@ export const SellerInterface: React.FC = () => {
           const state = editingItems[stateKey];
           const currentPrice = state ? state.price : 0;
           const currentQty = state ? state.offeredQty : item.quantity;
-          return currentQty === 0 || currentPrice > 0;
+          const currentWeight = state ? state.weight : 0;
+          const currentDelivery = state ? state.deliveryWeeks : 0;
+          
+          if (currentQty === 0) return true; // Declined item is valid
+          return currentPrice > 0 && currentWeight > 0 && currentDelivery > 0;
       });
   };
 
@@ -328,7 +340,7 @@ export const SellerInterface: React.FC = () => {
     if (order.isProcessed || !sellerAuth) return;
 
     if (!isOrderValid(order)) {
-        alert("Пожалуйста, укажите цену для всех позиций или отметьте их как 'Нет в наличии' (кнопка 🚫).");
+        alert("Пожалуйста, заполните Цену, Вес и Срок доставки для всех позиций.");
         return;
     }
 
@@ -342,9 +354,26 @@ export const SellerInterface: React.FC = () => {
         setVanishingIds(prev => { const n = new Set(prev); n.delete(order.id); return n; });
         const finalItems = order.items.map(item => {
           const stateKey = `${order.id}-${item.name}`;
-          // Default currency for seller is CNY
-          const state = editingItems[stateKey] || { price: 0, currency: 'CNY', offeredQty: item.quantity, refImage: '' };
-          return { ...item, sellerPrice: state.price, sellerCurrency: state.currency, offeredQuantity: state.offeredQty, refImage: state.refImage, available: state.offeredQty > 0 };
+          const state = editingItems[stateKey] || { 
+            price: 0, 
+            currency: 'CNY' as Currency, 
+            offeredQty: item.quantity, 
+            refImage: '',
+            weight: 0,
+            deliveryWeeks: 0,
+            photoUrl: ''
+          };
+          return { 
+            ...item, 
+            sellerPrice: state.price, 
+            sellerCurrency: 'CNY' as Currency, // Force CNY
+            offeredQuantity: state.offeredQty, 
+            refImage: state.refImage, 
+            weight: state.weight,
+            deliveryWeeks: state.deliveryWeeks,
+            photoUrl: state.photoUrl,
+            available: state.offeredQty > 0 
+          };
         });
         try {
           await SheetService.createOffer(order.id, sellerAuth.name, finalItems, order.vin, sellerAuth.phone);
@@ -595,31 +624,52 @@ export const SellerInterface: React.FC = () => {
                       {order.items.map(item => {
                         const stateKey = `${order.id}-${item.name}`;
                         const offerItem = myOffer?.items.find(i => i.name === item.name);
-                        // DEFAULT CURRENCY CNY
+                        
+                        // COMPETITIVE PRICING CALCULATION
+                        const otherOffers = (order.offers || []).filter(off => 
+                            String(off.clientName || '').trim().toUpperCase() !== sellerAuth?.name.trim().toUpperCase()
+                        );
+                        const competitorPrices = otherOffers.flatMap(off => 
+                            off.items
+                                .filter(i => i.name === item.name && (i.sellerPrice || 0) > 0)
+                                .map(i => i.sellerPrice || 0)
+                        );
+                        const minCompetitorPrice = competitorPrices.length > 0 ? Math.min(...competitorPrices) : null;
+
                         const state = editingItems[stateKey] || { 
                           price: offerItem?.sellerPrice || 0, 
-                          currency: offerItem?.sellerCurrency || 'CNY', 
+                          currency: 'CNY' as Currency, 
                           offeredQty: offerItem?.offeredQuantity || item.quantity, 
-                          refImage: offerItem?.refImage || '' 
+                          refImage: offerItem?.refImage || '',
+                          weight: offerItem?.weight || 0,
+                          deliveryWeeks: offerItem?.deliveryWeeks || 0,
+                          photoUrl: offerItem?.photoUrl || ''
                         };
                         
                         const isWinner = offerItem?.rank === 'ЛИДЕР' || offerItem?.rank === 'LEADER';
                         const isPartialWin = statusInfo.label === 'ЧАСТИЧНО';
-                        const isPriceEmpty = !isDisabled && !myOffer && state.price === 0;
-                        const isQtyDeficit = state.offeredQty < item.quantity;
                         const isUnavailable = state.offeredQty === 0;
                         
+                        // Validation states for UI
+                        const isPriceMissing = !isUnavailable && state.price === 0;
+                        const isWeightMissing = !isUnavailable && (state.weight || 0) === 0;
+                        const isDeliveryMissing = !isUnavailable && (state.deliveryWeeks || 0) === 0;
+
                         const displayName = item.AdminName || item.name;
                         const displayQty = item.AdminQuantity || item.quantity;
 
-                        const handleNumInput = (raw: string, field: 'price' | 'offeredQty', max?: number) => {
+                        const handleNumInput = (raw: string, field: 'price' | 'offeredQty' | 'weight' | 'deliveryWeeks', max?: number) => {
                             if (isDisabled || !!myOffer) return;
-                            const digits = raw.replace(/\D/g, '');
-                            let val = parseInt(digits) || 0;
+                            const digits = raw.replace(/[^\d.]/g, ''); // Allow decimal for weight
+                            let val = parseFloat(digits) || 0;
                             if (max && val > max) val = max;
-                            // Limit price to 1,000,000 (CAP IT, DON'T RESET TO 0)
                             if (field === 'price' && val > 1000000) val = 1000000; 
 
+                            setEditingItems(prev => ({ ...prev, [stateKey]: { ...(prev[stateKey] || state), [field]: val } }));
+                        };
+
+                        const handleTextInput = (val: string, field: 'photoUrl') => {
+                            if (isDisabled || !!myOffer) return;
                             setEditingItems(prev => ({ ...prev, [stateKey]: { ...(prev[stateKey] || state), [field]: val } }));
                         };
 
@@ -630,50 +680,77 @@ export const SellerInterface: React.FC = () => {
                         };
 
                         return (
-                          <div key={item.name} className={`flex flex-col md:flex-row gap-4 items-center border rounded-xl p-3 transition-all ${isWinner ? 'bg-emerald-50 border-emerald-200 ring-1 ring-emerald-100' : 'bg-slate-50/30'} ${isPriceEmpty ? 'border-red-300 bg-red-50/10' : 'border-slate-100'}`}>
-                             <div className="flex-grow w-full">
-                                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                    <h4 className={`font-black text-[11px] uppercase transition-all ${isUnavailable ? 'line-through text-red-400' : 'text-slate-900'}`}>{displayName}</h4>
-                                    {isWinner && <span className="bg-emerald-600 text-white px-1.5 py-0.5 rounded text-[7px] font-black uppercase">Выбрано</span>}
-                                    {isDisabled && !isWinner && isPartialWin && <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded text-[7px] font-black uppercase">В резерве</span>}
-                                    
-                                    {!isUnavailable && isQtyDeficit && <span className="bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded text-[7px] font-black uppercase flex items-center gap-1"><AlertTriangle size={8}/> Дефицит</span>}
-                                    {!isUnavailable && isPriceEmpty && <span className="bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded text-[7px] font-black uppercase flex items-center gap-1 animate-pulse"><AlertCircle size={8}/> Укажите цену</span>}
-                                    {isUnavailable && <span className="bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[7px] font-black uppercase flex items-center gap-1">Нет в наличии</span>}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[8px] font-bold text-slate-400 uppercase">{item.category}</span>
-                                    <span className="text-[9px] font-black bg-indigo-50 text-indigo-700 px-2 rounded">Нужно: {displayQty}</span>
-                                </div>
-                             </div>
-
-                             <div className="flex flex-wrap md:flex-nowrap items-end gap-2 shrink-0">
-                                <div className="w-24 flex items-end gap-2">
-                                    <button 
-                                        onClick={toggleUnavailable} 
-                                        disabled={isDisabled || !!myOffer}
-                                        className={`mb-[1px] p-1.5 rounded-lg border transition-all ${isUnavailable ? 'bg-red-50 border-red-200 text-red-500' : 'bg-white border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200'}`}
-                                        title={isUnavailable ? "Вернуть позицию" : "Нет позиции"}
-                                    >
-                                        <Ban size={14} />
-                                    </button>
-                                    <div className="space-y-1 flex-grow">
-                                        <label className="text-[7px] font-bold text-slate-400 uppercase block text-center">Кол-во</label>
-                                        <input type="text" disabled={isDisabled || !!myOffer} value={state.offeredQty || 0} onChange={e => handleNumInput(e.target.value, 'offeredQty', displayQty)} className={`w-full text-center font-bold text-[10px] border rounded-lg py-1.5 bg-white disabled:bg-slate-50 disabled:text-slate-400 outline-none focus:border-indigo-500 ${isQtyDeficit && !isUnavailable ? 'text-amber-600 border-amber-200' : 'border-slate-200'}`} placeholder="0" />
+                          <div key={item.name} className={`flex flex-col gap-3 border rounded-xl p-3 transition-all ${isWinner ? 'bg-emerald-50 border-emerald-200 ring-1 ring-emerald-100' : 'bg-slate-50/30'} ${isPriceMissing || isWeightMissing || isDeliveryMissing ? 'border-red-200' : 'border-slate-100'}`}>
+                             {/* Item Header */}
+                             <div className="flex flex-col md:flex-row justify-between gap-2">
+                                <div className="flex-grow">
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                        <h4 className={`font-black text-[11px] uppercase transition-all ${isUnavailable ? 'line-through text-red-400' : 'text-slate-900'}`}>{displayName}</h4>
+                                        {isWinner && <span className="bg-emerald-600 text-white px-1.5 py-0.5 rounded text-[7px] font-black uppercase shadow-sm">Выбрано</span>}
+                                        {isUnavailable && <span className="bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[7px] font-black uppercase">Нет в наличии</span>}
+                                        {!isUnavailable && minCompetitorPrice !== null && (
+                                            <span className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded text-[7px] font-bold border border-indigo-100">
+                                                Лучшая цена сейчас: {minCompetitorPrice} ¥
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase">{item.category}</span>
+                                        <span className="text-[9px] font-black bg-white/80 px-2 rounded border border-slate-100">Нужно: {displayQty} шт</span>
                                     </div>
                                 </div>
 
-                                <div className="w-24 space-y-1">
-                                    <label className="text-[7px] font-bold text-slate-400 uppercase block text-center">Цена</label>
-                                    <input type="text" disabled={isDisabled || !!myOffer || isUnavailable} value={isUnavailable ? 0 : state.price || ''} onChange={e => handleNumInput(e.target.value, 'price')} className={`w-full text-center font-bold text-[10px] border rounded-lg py-1.5 bg-white disabled:bg-slate-50 disabled:text-slate-400 outline-none focus:border-indigo-500 ${!isUnavailable && isPriceEmpty ? 'border-red-400 bg-red-50 text-red-600 placeholder:text-red-300' : 'border-slate-200'}`} placeholder="0" />
+                                {/* ADMIN COMMENT IF PRESENT */}
+                                {offerItem?.adminComment && (
+                                    <div className="md:max-w-[250px] bg-amber-50 border border-amber-100 p-2 rounded-lg text-[9px] text-amber-800 flex items-start gap-2">
+                                        <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                                        <div><span className="font-black uppercase text-[7px] block mb-0.5">Комментарий менеджера:</span>{offerItem.adminComment}</div>
+                                    </div>
+                                )}
+                             </div>
+
+                             {/* Form Grid */}
+                             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
+                                {/* Qty & Toggle */}
+                                <div className="flex items-end gap-2">
+                                    <button 
+                                        onClick={toggleUnavailable} 
+                                        disabled={isDisabled || !!myOffer}
+                                        className={`mb-[1px] p-2 rounded-lg border transition-all ${isUnavailable ? 'bg-red-50 border-red-200 text-red-500' : 'bg-white border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200'}`}
+                                    >
+                                        <Ban size={14} />
+                                    </button>
+                                    <div className="flex-grow space-y-1">
+                                        <label className="text-[7px] font-bold text-slate-400 uppercase block">Кол-во</label>
+                                        <input type="text" disabled={isDisabled || !!myOffer} value={state.offeredQty || 0} onChange={e => handleNumInput(e.target.value, 'offeredQty', displayQty)} className="w-full text-center font-bold text-[10px] border border-slate-200 rounded-lg py-1.5 bg-white disabled:bg-slate-50 outline-none" />
+                                    </div>
                                 </div>
-                                <div className="w-16 space-y-1">
-                                    <label className="text-[7px] font-bold text-slate-400 uppercase block text-center">Валюта</label>
-                                    <select disabled={isDisabled || !!myOffer || isUnavailable} value={state.currency} onChange={e => setEditingItems(prev => ({...prev, [stateKey]: {...(prev[stateKey] || state), currency: e.target.value as Currency}}))} className="w-full text-center font-bold text-[10px] border border-slate-200 rounded-lg py-1.5 bg-white disabled:bg-slate-50 outline-none focus:border-indigo-500">
-                                        <option value="CNY">CNY</option>
-                                        <option value="RUB">RUB</option>
-                                        <option value="USD">USD</option>
-                                    </select>
+
+                                {/* Price CNY */}
+                                <div className="space-y-1">
+                                    <label className="text-[7px] font-bold text-slate-400 uppercase block">Цена (¥)</label>
+                                    <input type="text" disabled={isDisabled || !!myOffer || isUnavailable} value={isUnavailable ? 0 : state.price || ''} onChange={e => handleNumInput(e.target.value, 'price')} className={`w-full text-center font-black text-[10px] border rounded-lg py-1.5 bg-white disabled:bg-slate-50 outline-none focus:border-indigo-500 ${isPriceMissing ? 'border-red-300 bg-red-50/30' : 'border-slate-200'}`} placeholder="0" />
+                                </div>
+
+                                {/* Weight */}
+                                <div className="space-y-1">
+                                    <label className="text-[7px] font-bold text-slate-400 uppercase block">Вес (кг)</label>
+                                    <input type="text" disabled={isDisabled || !!myOffer || isUnavailable} value={isUnavailable ? 0 : state.weight || ''} onChange={e => handleNumInput(e.target.value, 'weight')} className={`w-full text-center font-bold text-[10px] border rounded-lg py-1.5 bg-white disabled:bg-slate-50 outline-none focus:border-indigo-500 ${isWeightMissing ? 'border-red-300 bg-red-50/30' : 'border-slate-200'}`} placeholder="0.0" />
+                                </div>
+
+                                {/* Term */}
+                                <div className="space-y-1">
+                                    <label className="text-[7px] font-bold text-slate-400 uppercase block">Срок (нед)</label>
+                                    <input type="text" disabled={isDisabled || !!myOffer || isUnavailable} value={isUnavailable ? 0 : state.deliveryWeeks || ''} onChange={e => handleNumInput(e.target.value, 'deliveryWeeks')} className={`w-full text-center font-bold text-[10px] border rounded-lg py-1.5 bg-white disabled:bg-slate-50 outline-none focus:border-indigo-500 ${isDeliveryMissing ? 'border-red-300 bg-red-50/30' : 'border-slate-200'}`} placeholder="1" />
+                                </div>
+
+                                {/* Photo URL */}
+                                <div className="col-span-2 md:col-span-1 space-y-1">
+                                    <label className="text-[7px] font-bold text-slate-400 uppercase block">Ссылка на фото (URL)</label>
+                                    <div className="relative">
+                                        <input type="text" disabled={isDisabled || !!myOffer || isUnavailable} value={isUnavailable ? '' : state.photoUrl || ''} onChange={e => handleTextInput(e.target.value, 'photoUrl')} className="w-full pl-7 pr-2 font-bold text-[10px] border border-slate-200 rounded-lg py-1.5 bg-white disabled:bg-slate-50 outline-none focus:border-indigo-500" placeholder="http..." />
+                                        <Copy size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300" />
+                                    </div>
                                 </div>
                              </div>
                           </div>

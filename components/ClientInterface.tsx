@@ -701,9 +701,36 @@ export const ClientInterface: React.FC = () => {
                                          const displayName = item.AdminName || item.name;
                                          const displayQty = item.AdminQuantity || item.offeredQuantity || item.quantity;
                                          return (
-                                            <div key={idx} className="bg-white p-3 flex justify-between items-center group hover:bg-slate-50 transition-colors">
-                                                <div className="flex items-center gap-3"><div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-bold">{idx + 1}</div><div><span className="text-[10px] font-black text-slate-900 block uppercase">{displayName}</span><span className="text-[8px] font-bold text-slate-400 uppercase">{item.category} | {displayQty} шт</span></div></div>
-                                                <div className="text-right"><div className="text-[10px] font-black text-slate-900">{(finalPrice * displayQty).toLocaleString()} {curSymbol}</div><div className="text-[8px] text-slate-400 font-bold">{finalPrice.toLocaleString()} {curSymbol} / шт</div></div>
+                                            <div key={idx} className="bg-white p-4 flex flex-col gap-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="flex items-start gap-4">
+                                                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-black shrink-0">{idx + 1}</div>
+                                                        <div>
+                                                            <span className="text-sm font-black text-slate-900 block uppercase tracking-tight leading-tight mb-1">{displayName}</span>
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="text-[10px] font-bold text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded">{item.category}</span>
+                                                                <span className="text-[10px] font-black text-slate-700 uppercase bg-slate-100 px-2 py-0.5 rounded">{displayQty} шт</span>
+                                                                {item.weight && <span className="text-[10px] font-black text-indigo-600 uppercase bg-indigo-50 px-2 py-0.5 rounded">⚖️ {item.weight} кг</span>}
+                                                                {item.deliveryWeeks && <span className="text-[10px] font-black text-amber-600 uppercase bg-amber-50 px-2 py-0.5 rounded">📅 {item.deliveryWeeks} нед.</span>}
+                                                            </div>
+                                                            {item.photoUrl && (
+                                                                <a href={item.photoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase hover:bg-blue-100 transition-colors">
+                                                                    <FileText size={12}/> Фото детали
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm font-black text-slate-900">{ (finalPrice * displayQty).toLocaleString() } {curSymbol}</div>
+                                                        <div className="text-[10px] text-slate-400 font-bold">{finalPrice.toLocaleString()} {curSymbol} / шт</div>
+                                                    </div>
+                                                </div>
+                                                {item.adminComment && (
+                                                    <div className="ml-12 p-3 bg-amber-50 border border-amber-100 rounded-xl text-[10px] text-amber-800 flex items-start gap-2 italic">
+                                                        <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                                                        <span><span className="font-black not-italic block mb-0.5">Комментарий менеджера:</span>{item.adminComment}</span>
+                                                    </div>
+                                                )}
                                             </div>
                                          );
                                     })}

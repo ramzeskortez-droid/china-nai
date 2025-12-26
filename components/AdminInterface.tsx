@@ -126,7 +126,7 @@ export const AdminInterface: React.FC = () => {
             let aVal: any = '';
             let bVal: any = '';
             
-            if (sortConfig.key === 'id') { aVal = a.id; bVal = b.id; }
+            if (sortConfig.key === 'id') { aVal = Number(a.id); bVal = Number(b.id); }
             else if (sortConfig.key === 'date') { 
                 const parseD = (d: string) => {
                     const [day, month, year] = d.split(/[\.\,]/);
@@ -170,7 +170,7 @@ export const AdminInterface: React.FC = () => {
 
   // --- ACTIONS ---
 
-  const handleUpdateRank = async (offerId: string, itemName: string, currentRank: RankType, vin: string, adminPrice?: number, adminCurrency?: Currency) => {
+  const handleUpdateRank = async (offerId: string, itemName: string, currentRank: RankType, vin: string, adminPrice?: number, adminCurrency?: Currency, adminComment?: string) => {
       interactionLock.current = Date.now();
       const newAction = currentRank === 'ЛИДЕР' || currentRank === 'LEADER' ? 'RESET' : undefined;
       
@@ -184,7 +184,7 @@ export const AdminInterface: React.FC = () => {
                   items: off.items.map(i => {
                       if (i.name === itemName) {
                           if (off.id === offerId) {
-                              return { ...i, rank: newAction === 'RESET' ? 'РЕЗЕРВ' : 'ЛИДЕР' as RankType, adminPrice, adminCurrency };
+                              return { ...i, rank: newAction === 'RESET' ? 'РЕЗЕРВ' : 'ЛИДЕР' as RankType, adminPrice, adminCurrency, adminComment };
                           } else {
                               // If setting leader, reset others
                               if (!newAction) return { ...i, rank: 'РЕЗЕРВ' as RankType };
@@ -197,7 +197,7 @@ export const AdminInterface: React.FC = () => {
       }));
 
       try {
-          await SheetService.updateRank(vin, itemName, offerId, adminPrice, adminCurrency, newAction);
+          await SheetService.updateRank(vin, itemName, offerId, adminPrice, adminCurrency, newAction, adminComment);
           addLog(`Обновлен ранг для ${itemName}`, 'success');
       } catch (e) {
           addLog("Ошибка обновления ранга", "error");
@@ -238,17 +238,18 @@ export const AdminInterface: React.FC = () => {
   const executeApproval = async (orderId: string) => {
       setAdminModal(null);
       setIsSubmitting(orderId);
+      
+      // Optimistic Update - INSTANT REACTION
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isProcessed: true, status: OrderStatus.CLOSED } : o));
+      setSuccessToast({ message: "КП Утверждено!", id: Date.now().toString() });
+
       try {
           await SheetService.formCP(orderId);
           addLog(`КП сформировано для ${orderId}`, 'success');
-          
-          // Optimistic
-          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isProcessed: true, status: OrderStatus.CLOSED } : o));
-          setSuccessToast({ message: "КП Утверждено!", id: Date.now().toString() });
           setTimeout(() => setSuccessToast(null), 3000);
-          
       } catch (e) {
           addLog("Ошибка формирования КП", "error");
+          fetchData(true); // Revert on error
       } finally {
           setIsSubmitting(null);
       }
@@ -427,6 +428,8 @@ export const AdminInterface: React.FC = () => {
                                     <span className="inline-flex px-2 py-1 rounded bg-red-100 text-red-600 font-black uppercase text-[8px] whitespace-nowrap">АННУЛИРОВАН</span>
                                 ) : order.readyToBuy ? (
                                     <span className="inline-flex px-2 py-1 rounded bg-emerald-600 text-white font-black uppercase text-[8px] whitespace-nowrap">КУПЛЕНО</span>
+                                ) : order.isProcessed ? (
+                                    <span className="inline-flex px-2 py-1 rounded bg-indigo-600 text-white font-black uppercase text-[8px] whitespace-nowrap">КП УТВЕРЖДЕНО</span>
                                 ) : (
                                     <span className={`inline-flex px-2 py-1 rounded font-black uppercase text-[8px] whitespace-nowrap ${hasOffers ? 'bg-emerald-100 text-emerald-700' : 'bg-red-50 text-red-400'}`}>
                                         {offersCount} ОФФЕРОВ
@@ -472,6 +475,8 @@ export const AdminInterface: React.FC = () => {
                                 <span className="inline-flex px-2 py-1 rounded bg-red-100 text-red-600 font-black uppercase text-[8px] whitespace-nowrap">АННУЛИРОВАН</span>
                              ) : order.readyToBuy ? (
                                 <span className="inline-flex px-2 py-1 rounded bg-emerald-600 text-white font-black uppercase text-[8px] whitespace-nowrap">КУПЛЕНО</span>
+                             ) : order.isProcessed ? (
+                                <span className="inline-flex px-2 py-1 rounded bg-indigo-600 text-white font-black uppercase text-[8px] whitespace-nowrap">КП УТВЕРЖДЕНО</span>
                              ) : (
                                 <span className={`inline-flex px-2 py-1 rounded font-black uppercase text-[8px] whitespace-nowrap ${hasOffers ? 'bg-emerald-100 text-emerald-700' : 'bg-red-50 text-red-400'}`}>
                                     {offersCount} ОФФЕРОВ
@@ -548,7 +553,7 @@ export const AdminInterface: React.FC = () => {
                                                          </div>
                                                      ) : (
                                                          <>
-                                                            <span className="font-black text-[11px] uppercase tracking-wide">{item.AdminName || item.name}</span>
+                                                            <span className="font-black text-sm uppercase tracking-wide">{item.AdminName || item.name}</span>
                                                             <span className="text-[10px] font-bold opacity-60">({item.AdminQuantity || item.quantity} ШТ)</span>
                                                          </>
                                                      )}
@@ -561,61 +566,76 @@ export const AdminInterface: React.FC = () => {
                                                      itemOffers.map((off, oIdx) => {
                                                          const isLeader = off.item.rank === 'ЛИДЕР' || off.item.rank === 'LEADER';
                                                          return (
-                                                             <div key={oIdx} className={`flex flex-col md:grid md:grid-cols-[150px_1fr_100px_80px_100px] gap-2 md:gap-3 items-center p-3 rounded-lg border ${isLeader ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
-                                                                 {/* SUPPLIER NAME */}
-                                                                 <div className="w-full md:w-auto font-black text-[10px] uppercase text-slate-800 truncate">
-                                                                     {off.clientName}
-                                                                 </div>
-
-                                                                 {/* INPUTS ROW - Responsive */}
-                                                                 <div className="w-full flex md:contents gap-2 items-end">
-                                                                     {/* PRICE GROUP (Stacked on mobile) */}
-                                                                     <div className="flex-1 md:contents flex flex-col gap-1">
-                                                                         {/* PURCHASE INFO (Above input on mobile) */}
-                                                                         <div className="text-[9px] md:text-[10px] text-slate-500 font-bold whitespace-nowrap">
-                                                                             <span className="md:hidden text-slate-400 font-medium">Закуп: </span>
-                                                                             {off.item.sellerPrice} {off.item.sellerCurrency} <span className="mx-1">|</span> {off.item.offeredQuantity} шт
+                                                             <div key={oIdx} className={`flex flex-col gap-3 p-3 rounded-lg border ${isLeader ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-100'}`}>
+                                                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                                                     {/* SUPPLIER & BASIC INFO */}
+                                                                     <div className="flex-grow">
+                                                                         <div className="flex items-center gap-3 mb-1">
+                                                                             <span className="font-black text-xs uppercase text-slate-800">{off.clientName}</span>
+                                                                             {off.item.photoUrl && (
+                                                                                 <a href={off.item.photoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-md text-[9px] font-black uppercase hover:bg-blue-100 transition-colors" title="Открыть фото">
+                                                                                     <FileText size={10}/> Фото
+                                                                                 </a>
+                                                                             )}
                                                                          </div>
+                                                                         <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-500">
+                                                                             <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-700">{off.item.sellerPrice} {off.item.sellerCurrency}</span>
+                                                                             <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{off.item.offeredQuantity} шт</span>
+                                                                             {off.item.weight && <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">⚖️ {off.item.weight}кг</span>}
+                                                                             {off.item.deliveryWeeks && <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-100">📅 {off.item.deliveryWeeks}нед.</span>}
+                                                                         </div>
+                                                                     </div>
 
-                                                                         {/* ADMIN PRICE INPUT */}
+                                                                     {/* ADMIN CONTROLS */}
+                                                                     <div className="flex items-center gap-2">
                                                                          <input 
                                                                             type="number" 
-                                                                            placeholder={isLeader ? String(off.item.adminPrice || off.item.sellerPrice) : "0"} 
-                                                                            className="w-full px-2 py-1.5 border border-slate-200 rounded text-center text-[10px] font-bold outline-none focus:border-indigo-500 bg-white text-slate-900"
-                                                                            onChange={(e) => {
-                                                                                off.item.adminPrice = Number(e.target.value);
-                                                                            }}
+                                                                            placeholder={isLeader ? String(off.item.adminPrice || off.item.sellerPrice) : "Цена продажи"} 
+                                                                            className="w-24 px-2 py-1.5 border border-slate-200 rounded text-center text-[10px] font-bold outline-none focus:border-indigo-500 bg-white text-slate-900"
+                                                                            onChange={(e) => off.item.adminPrice = Number(e.target.value)}
                                                                             defaultValue={off.item.adminPrice || off.item.sellerPrice}
                                                                          />
+                                                                         <select 
+                                                                            className="w-16 px-1 py-1.5 border border-slate-200 rounded text-[10px] font-bold outline-none bg-white text-slate-900"
+                                                                            defaultValue={off.item.adminCurrency || off.item.sellerCurrency}
+                                                                            onChange={(e) => off.item.adminCurrency = e.target.value as Currency}
+                                                                         >
+                                                                             <option value="CNY">CNY</option>
+                                                                             <option value="RUB">RUB</option>
+                                                                             <option value="USD">USD</option>
+                                                                         </select>
+                                                                         <button 
+                                                                            onClick={() => {
+                                                                                handleUpdateRank(
+                                                                                    off.offerId, 
+                                                                                    item.name, 
+                                                                                    off.item.rank || '', 
+                                                                                    order.vin,
+                                                                                    off.item.adminPrice,
+                                                                                    off.item.adminCurrency,
+                                                                                    off.item.adminComment
+                                                                                );
+                                                                            }}
+                                                                            className={`w-24 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${isLeader ? 'bg-emerald-500 text-white shadow-emerald-200 shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                                                         >
+                                                                             {isLeader ? 'ЛИДЕР' : 'ВЫБРАТЬ'}
+                                                                         </button>
                                                                      </div>
-                                                                     
-                                                                     {/* CURRENCY SELECT */}
-                                                                     <select 
-                                                                        className="w-16 md:w-full md:mx-2 px-1 py-1.5 border border-slate-200 rounded text-[10px] font-bold outline-none bg-white text-slate-900 shrink-0"
-                                                                        defaultValue={off.item.adminCurrency || off.item.sellerCurrency}
-                                                                        onChange={(e) => off.item.adminCurrency = e.target.value as Currency}
-                                                                     >
-                                                                         <option value="CNY">CNY</option>
-                                                                         <option value="RUB">RUB</option>
-                                                                         <option value="USD">USD</option>
-                                                                     </select>
+                                                                 </div>
 
-                                                                     {/* ACTION BUTTON */}
-                                                                     <button 
-                                                                        onClick={() => {
-                                                                            handleUpdateRank(
-                                                                                off.offerId, 
-                                                                                item.name, 
-                                                                                off.item.rank || '', 
-                                                                                order.vin,
-                                                                                off.item.adminPrice,
-                                                                                off.item.adminCurrency
-                                                                            );
-                                                                        }}
-                                                                        className={`flex-1 md:w-full py-2 rounded-lg font-black text-[9px] uppercase transition-all shrink-0 ${isLeader ? 'bg-emerald-500 text-white shadow-emerald-200 shadow-md hover:bg-emerald-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                                                                     >
-                                                                         {isLeader ? 'ЛИДЕР' : 'ВЫБРАТЬ'}
-                                                                     </button>
+                                                                 {/* COMMENT INPUT (Visible if not leader or always for feedback) */}
+                                                                 <div className="relative">
+                                                                     <input 
+                                                                        type="text" 
+                                                                        maxLength={90}
+                                                                        placeholder="Комментарий к этой позиции (видят поставщик и клиент)..."
+                                                                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-100 rounded text-[9px] font-bold outline-none focus:border-indigo-200"
+                                                                        defaultValue={off.item.adminComment || ""}
+                                                                        onChange={(e) => off.item.adminComment = e.target.value}
+                                                                     />
+                                                                     <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[7px] font-bold text-slate-300 uppercase">
+                                                                         Feedback
+                                                                     </div>
                                                                  </div>
                                                              </div>
                                                          );

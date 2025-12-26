@@ -299,7 +299,7 @@ function propagateEditsToOffers(sheet, orderId, newOrderItems) {
 }
 
 function handleRankUpdate(sheet, body) {
-  const { vin, detailName, leadOfferId, adminPrice, adminCurrency } = body;
+  const { vin, detailName, leadOfferId, adminPrice, adminCurrency, adminComment } = body;
   const data = sheet.getDataRange().getValues();
   
   let parentId = null;
@@ -310,14 +310,6 @@ function handleRankUpdate(sheet, body) {
     }
   }
   if (!parentId) return;
-
-  let orderRowIndex = -1;
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(parentId)) {
-      orderRowIndex = i;
-      break;
-    }
-  }
 
   const targetNameLower = detailName.trim().toLowerCase();
   const isReset = body.actionType === 'RESET'; 
@@ -336,6 +328,7 @@ function handleRankUpdate(sheet, body) {
                 if (isReset) {
                     if (item.rank === 'ЛИДЕР') {
                         item.rank = 'РЕЗЕРВ';
+                        if (adminComment !== undefined) item.adminComment = adminComment;
                         changed = true;
                     }
                 } else {
@@ -343,10 +336,15 @@ function handleRankUpdate(sheet, body) {
                         item.rank = 'ЛИДЕР';
                         if (adminPrice !== undefined) item.adminPrice = adminPrice;
                         if (adminCurrency !== undefined) item.adminCurrency = adminCurrency;
+                        item.adminComment = adminComment || ""; 
                         changed = true;
                     } else {
                         if (item.rank === 'ЛИДЕР') {
                             item.rank = 'РЕЗЕРВ';
+                            changed = true;
+                        }
+                        if (adminComment !== undefined) {
+                            item.adminComment = adminComment;
                             changed = true;
                         }
                     }
@@ -374,6 +372,15 @@ function handleRankUpdate(sheet, body) {
          });
       }
   }
+  
+  let orderRowIndex = -1;
+  for (let i = 1; i < freshData.length; i++) {
+    if (String(freshData[i][0]) === String(parentId)) {
+      orderRowIndex = i;
+      break;
+    }
+  }
+
   if (orderRowIndex !== -1) {
       try { 
           const rawOrderItems = JSON.parse(freshData[orderRowIndex][7]);
@@ -382,7 +389,7 @@ function handleRankUpdate(sheet, body) {
           if (carInfo && carInfo.AdminModel) carInfo.model = carInfo.AdminModel; 
           if (carInfo && carInfo.AdminYear) carInfo.year = carInfo.AdminYear;
       } catch(e){}
-      sheet.getRange(orderRowIndex + 1, 9).setValue(generateFinalOrderReceipt(carInfo, allLeaderItems));
+      sheet.getRange(orderRowIndex + 1, 9).setValue(allLeaderItems.length > 0 ? generateFinalOrderReceipt(carInfo, allLeaderItems) : generateOrderSummary(JSON.parse(freshData[orderRowIndex][7])));
   }
 }
 
@@ -665,10 +672,13 @@ function formatNewOfferMessage(offer, offerNum, parentRow) {
         offer.items.forEach(item => {
             if ((item.offeredQuantity || 0) > 0) {
                 const price = item.sellerPrice || 0;
-                const cur = item.sellerCurrency === 'USD' ? '$' : (item.sellerCurrency === 'CNY' ? '¥' : '₽');
-                currency = item.sellerCurrency || 'RUB'; 
+                const cur = (item.sellerCurrency === 'USD') ? '$' : (item.sellerCurrency === 'CNY' ? '¥' : '₽');
                 const qty = item.offeredQuantity || 1;
-                itemsHtml += `• ${item.name} — <b>${price}${cur}</b> x <b>${qty}шт</b>\n`;
+                
+                const weight = item.weight ? ` | ⚖️ ${item.weight}кг` : "";
+                const term = item.deliveryWeeks ? ` | 📅 ${item.deliveryWeeks}н` : "";
+
+                itemsHtml += `• ${item.name} — <b>${price}${cur}</b> x <b>${qty}шт</b>${weight}${term}\n`;
                 totalSum += price * qty;
             }
         });

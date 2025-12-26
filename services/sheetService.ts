@@ -247,7 +247,7 @@ export class SheetService {
     this.lastFetch = 0;
   }
 
-  static async updateRank(vin: string, itemName: string, offerId: string, adminPrice?: number, adminCurrency?: Currency, actionType?: 'RESET'): Promise<void> {
+  static async updateRank(vin: string, itemName: string, offerId: string, adminPrice?: number, adminCurrency?: Currency, actionType?: 'RESET', adminComment?: string): Promise<void> {
     await this.postData({
       action: 'update_rank',
       vin,
@@ -255,7 +255,8 @@ export class SheetService {
       leadOfferId: offerId,
       adminPrice,
       adminCurrency,
-      actionType // New parameter to support unselecting leader
+      actionType, // New parameter to support unselecting leader
+      adminComment // New: Comment why not selected or additional info
     });
     this.lastFetch = 0;
   }

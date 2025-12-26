@@ -56,7 +56,11 @@ export interface OrderItem {
   offeredQuantity?: number;
   available?: boolean;
   rank?: RankType;
-  comment?: string;
+  comment?: string; // Комментарий поставщика (старое поле)
+  adminComment?: string; // НОВОЕ: Комментарий админа при отказе
+  weight?: number; // НОВОЕ: Вес в кг
+  deliveryWeeks?: number; // НОВОЕ: Срок в неделях
+  photoUrl?: string; // НОВОЕ: Ссылка на фото
   clientPhone?: string; // Телефон клиента (из заказа)
   sellerPhone?: string; // Телефон поставщика (из оффера)
 }
