@@ -94,7 +94,7 @@ export const ClientInterface: React.FC = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Sorting State
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'id', direction: 'desc' });
 
   const fetchOrders = async () => {
     setIsSyncing(true);
@@ -622,15 +622,18 @@ export const ClientInterface: React.FC = () => {
                         {isOptimistic ? (<div className="flex items-center gap-1.5 text-indigo-500"><Loader2 size={12} className="animate-spin"/><span className="text-[9px] font-bold uppercase tracking-wider">Создание</span></div>) : (<span className="font-mono font-bold text-[10px] text-slate-900 truncate block">{order.id}</span>)}
                         <div className="md:hidden flex items-center gap-2">
                              {/* Mobile Status */}
-                             {order.isRefused ? (
-                                <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-red-100 text-red-600 whitespace-nowrap shadow-sm flex items-center gap-1"><Ban size={10}/></span>
-                            ) : order.readyToBuy ? (
-                                <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-emerald-600 text-white whitespace-nowrap shadow-sm">КУПЛЕНО</span>
-                            ) : (
-                                <span className={`px-2 py-1 rounded-md font-bold text-[8px] uppercase whitespace-nowrap shadow-sm border ${hasWinning ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
-                                    {hasWinning ? 'ГОТОВО' : 'В РАБОТЕ'}
-                                </span>
-                            )}
+                             {(() => {
+                                const ws = order.workflowStatus || 'В обработке';
+                                if (ws === 'Аннулирован' || ws === 'Отказ') return <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-red-100 text-red-600 whitespace-nowrap shadow-sm flex items-center gap-1"><Ban size={10}/></span>;
+                                if (ws === 'Выполнен') return <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-emerald-600 text-white whitespace-nowrap shadow-sm">ВЫПОЛНЕН</span>;
+                                if (ws === 'КП отправлено') return <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-emerald-50 text-emerald-700 border border-emerald-100 whitespace-nowrap shadow-sm">КП ГОТОВО</span>;
+                                if (ws === 'В пути') return <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-blue-600 text-white whitespace-nowrap shadow-sm">В ПУТИ</span>;
+                                return (
+                                    <span className={`px-2 py-1 rounded-md font-bold text-[8px] uppercase whitespace-nowrap shadow-sm border ${ws === 'В обработке' ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>
+                                        {ws.toUpperCase()}
+                                    </span>
+                                );
+                             })()}
                              <div className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}><ChevronDown size={14} className="text-slate-300"/></div>
                         </div>
                     </div>
@@ -667,15 +670,18 @@ export const ClientInterface: React.FC = () => {
                     
                     {/* STATUS (Desktop) */}
                     <div className="hidden md:flex justify-end text-right">
-                        {order.isRefused ? (
-                            <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-red-100 text-red-600 whitespace-nowrap shadow-sm flex items-center gap-1"><Ban size={10}/> АННУЛИРОВАН</span>
-                        ) : order.readyToBuy ? (
-                            <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-emerald-600 text-white whitespace-nowrap shadow-sm">КУПЛЕНО</span>
-                        ) : (
-                            <span className={`px-2 py-1 rounded-md font-bold text-[8px] uppercase whitespace-nowrap shadow-sm border ${hasWinning ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
-                                {hasWinning ? 'ГОТОВО' : 'В ОБРАБОТКЕ'}
-                            </span>
-                        )}
+                        {(() => {
+                            const ws = order.workflowStatus || 'В обработке';
+                            if (ws === 'Аннулирован' || ws === 'Отказ') return <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-red-100 text-red-600 whitespace-nowrap shadow-sm flex items-center gap-1"><Ban size={10}/> АННУЛИРОВАН</span>;
+                            if (ws === 'Выполнен') return <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-emerald-600 text-white whitespace-nowrap shadow-sm">ВЫПОЛНЕН</span>;
+                            if (ws === 'КП отправлено') return <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-emerald-50 text-emerald-700 border border-emerald-100 whitespace-nowrap shadow-sm">КП ГОТОВО</span>;
+                            if (ws === 'В пути') return <span className="px-2 py-1 rounded-md font-black text-[8px] uppercase bg-blue-600 text-white whitespace-nowrap shadow-sm">В ПУТИ</span>;
+                            return (
+                                <span className={`px-2 py-1 rounded-md font-bold text-[8px] uppercase whitespace-nowrap shadow-sm border ${ws === 'В обработке' ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>
+                                    {ws.toUpperCase()}
+                                </span>
+                            );
+                        })()}
                     </div>
 
                     <div className="hidden md:flex justify-end">{isOptimistic ? null : <MoreHorizontal size={14} className="text-slate-300" />}</div>

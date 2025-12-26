@@ -85,7 +85,6 @@ export interface Order {
   items: OrderItem[];
   status: OrderStatus;
   createdAt: string; 
-  location: string;
   clientName: string;
   clientPhone?: string; // Добавлено поле телефона
   visibleToClient?: 'Y' | 'N';

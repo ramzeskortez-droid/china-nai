@@ -44,7 +44,7 @@ export const SellerInterface: React.FC = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Sorting State
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'id', direction: 'desc' });
 
   const fetchData = async (silent = false) => {
     if (!sellerAuth?.name) return;
@@ -171,7 +171,7 @@ export const SellerInterface: React.FC = () => {
     }
 
     if (!order.isProcessed) {
-        return { label: 'На проверке', color: 'bg-blue-50 text-blue-600 border-blue-100', icon: <Loader2 size={10} className="animate-spin"/> };
+        return { label: 'Идут торги', color: 'bg-blue-50 text-blue-600 border-blue-100', icon: <Loader2 size={10} className="animate-spin"/> };
     }
 
     const winningItems = myOffer.items.filter(i => i.rank === 'ЛИДЕР' || i.rank === 'LEADER');

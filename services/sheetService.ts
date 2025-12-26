@@ -19,11 +19,10 @@ interface SheetRow {
   json: string;    // Col H (7) - The source of truth for app logic
   rank: string;    // Col I (8) - Now "Readable Status" string (e.g. "✅ Item | 5000")
   createdAt: string; // Col J (9)
-  location: string; // Col K (10)
-  processed: string; // Col L (11) (Y/N)
-  readyToBuy?: string; // Col M (12) (Y/N)
-  refusal?: string; // Col N (13) (Y/N) - Cancellation flag
-  workflowStatus?: string; // Col O (14) - Status String
+  processed: string; // Col K (10) (Y/N)
+  readyToBuy?: string; // Col L (11) (Y/N)
+  refusal?: string; // Col M (12) (Y/N) - Cancellation flag
+  workflowStatus?: string; // Col N (13) - Status String
 }
 
 export class SheetService {
@@ -112,7 +111,6 @@ export class SheetService {
             clientPhone: clientPhone, 
             refusalReason: refusalReason,
             createdAt: row.createdAt,
-            location: row.location,
             visibleToClient: isProcessed ? 'Y' : 'N',
             items: parsedItems,
             offers: [],
@@ -139,7 +137,6 @@ export class SheetService {
             status: row.status as OrderStatus,
             clientName: row.clientName,
             createdAt: row.createdAt,
-            location: row.location,
             visibleToClient: parentOrder.isProcessed ? 'Y' : 'N',
             items: items,
             isProcessed: true
@@ -205,7 +202,6 @@ export class SheetService {
         vin,
         clientName,
         createdAt: new Date().toLocaleString('ru-RU'),
-        location: 'РФ',
         items: itemsWithPhone,
         visibleToClient: 'N'
       }
@@ -239,7 +235,6 @@ export class SheetService {
         vin,
         clientName: sellerName,
         createdAt: new Date().toLocaleString('ru-RU'),
-        location: 'РФ',
         items: itemsWithPhone,
         visibleToClient: 'N'
       }

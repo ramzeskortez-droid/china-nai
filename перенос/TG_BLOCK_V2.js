@@ -25,7 +25,7 @@ function doGet(e) {
     return response(rows.map(r => ({
       id: r[0], parentId: r[1], type: r[2], status: r[3], vin: r[4], 
       clientName: r[5], summary: r[6], json: r[7], rank: r[8], 
-      createdAt: r[9], location: r[10], processed: r[11], readyToBuy: r[12], refusal: r[13], workflowStatus: r[14]
+      createdAt: r[9], processed: r[10], readyToBuy: r[11], refusal: r[12], workflowStatus: r[13]
     })));
   }
   return response({status: "alive", version: "4.9.2-admin-annul"});
@@ -51,7 +51,7 @@ function doPost(e) {
     }
 
     const sheet = getOrCreateSheet(doc, 'MarketData', [
-      'ID', 'Parent ID', 'Тип', 'Статус', 'VIN', 'Имя', 'Сводка', 'JSON', 'Детали/Цены', 'Дата', 'Локация', 'ОБРАБОТАН', 'ГОТОВ КУПИТЬ', 'ОТКАЗ', 'Workflow'
+      'ID', 'Parent ID', 'Тип', 'Статус', 'VIN', 'Имя', 'Сводка', 'JSON', 'Детали/Цены', 'Дата', 'ОБРАБОТАН', 'ГОТОВ КУПИТЬ', 'ОТКАЗ', 'Workflow'
     ]);
     const body = contents;
 
@@ -77,9 +77,9 @@ function doPost(e) {
       
       const readableStatus = generateOrderSummary(o.items);
 
-      // Col 14 (O) = WorkflowStatus ('В обработке')
+      // Col 14 (N) = WorkflowStatus ('В обработке')
       const rowData = [
-        o.id, '', 'ORDER', o.status, o.vin, o.clientName, summary, itemsJson, readableStatus, formattedDate, o.location, 'N', 'N', 'N', 'В обработке'
+        o.id, '', 'ORDER', o.status, o.vin, o.clientName, summary, itemsJson, readableStatus, formattedDate, 'N', 'N', 'N', 'В обработке'
       ];
       
       sheet.insertRowAfter(1);
@@ -102,7 +102,7 @@ function doPost(e) {
       o.id = newOfferId;
 
       const itemsJson = JSON.stringify(o.items);
-      const rowData = [o.id, o.parentId, 'OFFER', o.status, o.vin, o.clientName, 'Предложение', itemsJson, generateOfferSummary(o.items), (o.createdAt || '').replace(', ', '\n'), o.location, 'N', 'N', 'N', ''];
+      const rowData = [o.id, o.parentId, 'OFFER', o.status, o.vin, o.clientName, 'Предложение', itemsJson, generateOfferSummary(o.items), (o.createdAt || '').replace(', ', '\n'), 'N', 'N', 'N', ''];
       const insertionIndex = findBlockEndIndex(sheet, o.parentId);
       sheet.insertRowAfter(insertionIndex);
       sheet.getRange(insertionIndex + 1, 1, 1, rowData.length).setValues([rowData]);
@@ -119,8 +119,8 @@ function doPost(e) {
     }
     // --- FORM CP ---
     else if (body.action === 'form_cp') {
-      updateStatusById(sheet, body.orderId, 12, 'Y'); 
-      updateStatusById(sheet, body.orderId, 15, 'КП готово'); // Col O (15th column, index 14)
+      updateStatusById(sheet, body.orderId, 11, 'Y'); // Col K (11) = PROCESSED
+      updateStatusById(sheet, body.orderId, 14, 'КП отправлено'); // Col N (14) = Workflow
       const orderRow = findOrderRowById(sheet, body.orderId);
       const subSheet = doc.getSheetByName('Subscribers');
       
@@ -128,8 +128,8 @@ function doPost(e) {
     }
     // --- CONFIRM PURCHASE ---
     else if (body.action === 'confirm_purchase') {
-      updateStatusById(sheet, body.orderId, 13, 'Y');
-      updateStatusById(sheet, body.orderId, 15, 'Готов купить'); // Col O
+      updateStatusById(sheet, body.orderId, 12, 'Y'); // Col L (12) = READY TO BUY
+      updateStatusById(sheet, body.orderId, 14, 'Готов купить'); // Col N (14)
       const orderRow = findOrderRowById(sheet, body.orderId);
       if (orderRow) {
         const subSheet = doc.getSheetByName('Subscribers');
@@ -138,15 +138,17 @@ function doPost(e) {
     }
     // --- UPDATE WORKFLOW STATUS ---
     else if (body.action === 'update_workflow_status') {
-       updateStatusById(sheet, body.orderId, 15, body.status); // Col O
+       updateStatusById(sheet, body.orderId, 14, body.status); // Col N (14)
     }
     // --- REFUSE ORDER ---
     else if (body.action === 'refuse_order') {
-       updateStatusById(sheet, body.orderId, 14, 'Y'); 
-       updateStatusById(sheet, body.orderId, 4, 'ЗАКРЫТ');
+       updateStatusById(sheet, body.orderId, 13, 'Y'); // Col M (13) = REFUSAL
+       updateStatusById(sheet, body.orderId, 4, 'ЗАКРЫТ'); // Col D (4) = Status
+       
        // Set status based on source
        const status = body.source === 'ADMIN' ? 'Аннулирован' : 'Отказ';
-       updateStatusById(sheet, body.orderId, 15, status); 
+       updateStatusById(sheet, body.orderId, 14, status); // Col N (14)
+
        
        if (body.reason) {
           const orderRow = findOrderRowById(sheet, body.orderId);
@@ -309,30 +311,33 @@ function propagateEditsToOffers(sheet, orderId, newOrderItems) {
 }
 
 function handleRankUpdate(sheet, body) {
-  const { vin, detailName, leadOfferId, adminPrice, adminCurrency, adminComment, deliveryRate } = body;
+  const { detailName, leadOfferId, adminPrice, adminCurrency, adminComment, deliveryRate } = body;
   const data = sheet.getDataRange().getValues();
   
+  const targetOfferId = String(leadOfferId).trim();
+  const targetNameLower = String(detailName).trim().toLowerCase();
+  const isReset = body.actionType === 'RESET'; 
+
   let parentId = null;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(leadOfferId)) {
-      parentId = data[i][1];
+    if (String(data[i][0]).trim() === targetOfferId) {
+      parentId = String(data[i][1]).trim();
       break;
     }
   }
   if (!parentId) return;
 
-  const targetNameLower = detailName.trim().toLowerCase();
-  const isReset = body.actionType === 'RESET'; 
-
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][1]) === String(parentId) && data[i][2] === 'OFFER') {
+    const rowParentId = String(data[i][1]).trim();
+    if (rowParentId === parentId && data[i][2] === 'OFFER') {
         let items = [];
         try { items = JSON.parse(data[i][7] || '[]'); } catch(e) {}
         
         let changed = false;
         items = items.map(item => {
-            const n = item.AdminName || item.name;
-            const match = n.trim().toLowerCase() === targetNameLower || item.name.trim().toLowerCase() === targetNameLower;
+            const currentItemName = String(item.AdminName || item.name || "").trim().toLowerCase();
+            const originalItemName = String(item.name || "").trim().toLowerCase();
+            const match = currentItemName === targetNameLower || originalItemName === targetNameLower;
             
             if (match) {
                 if (isReset) {
@@ -342,14 +347,15 @@ function handleRankUpdate(sheet, body) {
                         changed = true;
                     }
                 } else {
-                    if (String(data[i][0]) === String(leadOfferId)) {
+                    if (String(data[i][0]).trim() === targetOfferId) {
                         item.rank = 'ЛИДЕР';
                         if (adminPrice !== undefined) item.adminPrice = adminPrice;
                         if (adminCurrency !== undefined) item.adminCurrency = adminCurrency;
-                        if (deliveryRate !== undefined) item.deliveryRate = deliveryRate; // SAVE RATE
+                        if (deliveryRate !== undefined) item.deliveryRate = deliveryRate;
                         item.adminComment = adminComment || ""; 
                         changed = true;
                     } else {
+                        // Reset other offers for the same item to RESERVE
                         if (item.rank === 'ЛИДЕР') {
                             item.rank = 'РЕЗЕРВ';
                             changed = true;
@@ -371,37 +377,8 @@ function handleRankUpdate(sheet, body) {
     }
   }
   
-  const allLeaderItems = [];
-  let carInfo = null;
-  const freshData = sheet.getDataRange().getValues();
-  
-  for (let i = 1; i < freshData.length; i++) {
-      if (String(freshData[i][1]) === String(parentId) && freshData[i][2] === 'OFFER') {
-         let oItems = JSON.parse(freshData[i][7] || '[]');
-         oItems.forEach(item => {
-             if (item.rank === 'ЛИДЕР') allLeaderItems.push(item);
-         });
-      }
-  }
-  
-  let orderRowIndex = -1;
-  for (let i = 1; i < freshData.length; i++) {
-    if (String(freshData[i][0]) === String(parentId)) {
-      orderRowIndex = i;
-      break;
-    }
-  }
-
-  if (orderRowIndex !== -1) {
-      try { 
-          const rawOrderItems = JSON.parse(freshData[orderRowIndex][7]);
-          const firstItem = rawOrderItems[0];
-          carInfo = firstItem.car;
-          if (carInfo && carInfo.AdminModel) carInfo.model = carInfo.AdminModel; 
-          if (carInfo && carInfo.AdminYear) carInfo.year = carInfo.AdminYear;
-      } catch(e){}
-      sheet.getRange(orderRowIndex + 1, 9).setValue(allLeaderItems.length > 0 ? generateFinalOrderReceipt(carInfo, allLeaderItems) : generateOrderSummary(JSON.parse(freshData[orderRowIndex][7])));
-  }
+  const currentItems = JSON.parse(findOrderRowById(sheet, parentId)[7]);
+  recalculateSummaryOrReceipt(sheet, parentId, currentItems);
 }
 
 // NEW FUNCTION: Specific format for Admin Annulment
@@ -850,7 +827,7 @@ function formatRows(sheet) {
     const rowIdx = i + 1;
     const type = data[i][2];
     const status = data[i][3];
-    const refusal = data[i][13]; 
+    const refusal = data[i][12]; 
 
     const range = sheet.getRange(rowIdx, 1, 1, 14);
 
@@ -858,7 +835,7 @@ function formatRows(sheet) {
         range.setBackground('#ffebee').setFontColor('#b71c1c');
     } else if (status === 'ЗАКРЫТ') {
         range.setBackground('#eeeeee').setFontColor('#999999');
-    } else if (type === 'ORDER' && data[i][11] === 'Y') { 
+    } else if (type === 'ORDER' && data[i][10] === 'Y') { 
         range.setBackground('#e8f5e9');
     } else if (type === 'OFFER') {
         range.setBackground('#fffde7');

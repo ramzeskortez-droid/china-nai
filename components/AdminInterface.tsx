@@ -25,13 +25,24 @@ interface AdminModalState {
 // UNIFIED GRID COLUMNS DEFINITION
 const GRID_COLS = "grid-cols-[80px_100px_1fr_60px_120px_110px_110px_90px_30px]";
 
+type AdminTab = 
+  | 'new' 
+  | 'kp_sent' 
+  | 'ready_to_buy' 
+  | 'supplier_confirmed' 
+  | 'awaiting_payment' 
+  | 'in_transit' 
+  | 'completed' 
+  | 'annulled' 
+  | 'refused';
+
 export const AdminInterface: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'open' | 'closed'>('open');
+  const [activeTab, setActiveTab] = useState<AdminTab>('new');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
@@ -42,6 +53,7 @@ export const AdminInterface: React.FC = () => {
   const [editForm, setEditForm] = useState<{ [key: string]: string }>({}); 
   
   const [successToast, setSuccessToast] = useState<{message: string, id: string} | null>(null);
+  const [vanishingIds, setVanishingIds] = useState<Set<string>>(new Set());
 
   const [adminModal, setAdminModal] = useState<AdminModalState | null>(null);
   const [refusalReason, setRefusalReason] = useState("");
@@ -49,7 +61,7 @@ export const AdminInterface: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'id', direction: 'desc' });
 
   const interactionLock = useRef<number>(0);
 
@@ -107,13 +119,25 @@ export const AdminInterface: React.FC = () => {
   // --- FILTERING & SORTING ---
   const filteredOrders = useMemo(() => {
       let result = orders.filter(o => {
-          const isClosed = o.status === OrderStatus.CLOSED || o.readyToBuy || o.isRefused;
-          if (activeTab === 'open' && isClosed) return false;
-          if (activeTab === 'closed' && !isClosed) return false;
+          const status = o.workflowStatus || 'В обработке';
+          
+          let matchesTab = false;
+          switch (activeTab) {
+              case 'new': matchesTab = status === 'В обработке'; break;
+              case 'kp_sent': matchesTab = status === 'КП отправлено'; break;
+              case 'ready_to_buy': matchesTab = status === 'Готов купить'; break;
+              case 'supplier_confirmed': matchesTab = status === 'Подтверждение от поставщика'; break;
+              case 'awaiting_payment': matchesTab = status === 'Ожидает оплаты'; break;
+              case 'in_transit': matchesTab = status === 'В пути'; break;
+              case 'completed': matchesTab = status === 'Выполнен'; break;
+              case 'annulled': matchesTab = status === 'Аннулирован'; break;
+              case 'refused': matchesTab = status === 'Отказ'; break;
+          }
+          if (!matchesTab) return false;
           
           if (searchQuery) {
               const q = searchQuery.toLowerCase();
-              return o.id.toLowerCase().includes(q) || 
+              return o.id.toString().toLowerCase().includes(q) || 
                      o.vin.toLowerCase().includes(q) || 
                      o.clientName.toLowerCase().includes(q) ||
                      o.items.some(i => i.name.toLowerCase().includes(q));
@@ -239,16 +263,32 @@ export const AdminInterface: React.FC = () => {
       setAdminModal(null);
       setIsSubmitting(orderId);
       
-      // Optimistic Update - INSTANT REACTION
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isProcessed: true, status: OrderStatus.CLOSED } : o));
+      // Visual feedback
+      setVanishingIds(prev => new Set(prev).add(orderId));
       setSuccessToast({ message: "КП Утверждено!", id: Date.now().toString() });
+
+      // Optimistic Update - INSTANT REACTION
+      setOrders(prev => prev.map(o => o.id === orderId ? { 
+          ...o, 
+          isProcessed: true, 
+          status: OrderStatus.CLOSED, 
+          workflowStatus: 'КП отправлено' 
+      } : o));
 
       try {
           await SheetService.formCP(orderId);
           addLog(`КП сформировано для ${orderId}`, 'success');
-          setTimeout(() => setSuccessToast(null), 3000);
+          
+          setTimeout(() => {
+              setVanishingIds(prev => { const n = new Set(prev); n.delete(orderId); return n; });
+              setExpandedId(null);
+              setSuccessToast(null);
+              fetchData(true);
+          }, 800);
+          
       } catch (e) {
           addLog("Ошибка формирования КП", "error");
+          setVanishingIds(prev => { const n = new Set(prev); n.delete(orderId); return n; });
           fetchData(true); // Revert on error
       } finally {
           setIsSubmitting(null);
@@ -375,11 +415,42 @@ export const AdminInterface: React.FC = () => {
           </div>
 
           <div className="flex justify-between items-end border-b border-slate-200">
-              <div className="flex gap-4">
-                  <button onClick={() => setActiveTab('open')} className={`pb-2 text-sm font-bold uppercase border-b-2 transition-colors ${activeTab === 'open' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Активные</button>
-                  <button onClick={() => setActiveTab('closed')} className={`pb-2 text-sm font-bold uppercase border-b-2 transition-colors ${activeTab === 'closed' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Архив / Закрытые</button>
+              <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar max-w-[calc(100%-40px)]">
+                  {[
+                      { id: 'new', label: 'Новые' },
+                      { id: 'kp_sent', label: 'КП отправлено' },
+                      { id: 'ready_to_buy', label: 'Готов купить' },
+                      { id: 'supplier_confirmed', label: 'Подтверждение' },
+                      { id: 'awaiting_payment', label: 'Ожидает оплаты' },
+                      { id: 'in_transit', label: 'В пути' },
+                      { id: 'completed', label: 'Выполнен' },
+                      { id: 'annulled', label: 'Аннулированные' },
+                      { id: 'refused', label: 'Отказ' }
+                  ].map(tab => {
+                      const count = orders.filter(o => (o.workflowStatus || 'В обработке') === (
+                          tab.id === 'new' ? 'В обработке' : 
+                          tab.id === 'kp_sent' ? 'КП отправлено' : 
+                          tab.id === 'ready_to_buy' ? 'Готов купить' :
+                          tab.id === 'supplier_confirmed' ? 'Подтверждение от поставщика' :
+                          tab.id === 'awaiting_payment' ? 'Ожидает оплаты' :
+                          tab.id === 'in_transit' ? 'В пути' :
+                          tab.id === 'completed' ? 'Выполнен' :
+                          tab.id === 'annulled' ? 'Аннулирован' : 'Отказ'
+                      )).length;
+
+                      return (
+                          <button 
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as AdminTab)} 
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-400 hover:border-indigo-300'}`}
+                          >
+                              {tab.label}
+                              {count > 0 && <span className={`px-1.5 py-0.5 rounded-md text-[8px] ${activeTab === tab.id ? 'bg-white/20' : 'bg-slate-100'}`}>{count}</span>}
+                          </button>
+                      );
+                  })}
               </div>
-              <button onClick={() => fetchData()} className="mb-2 p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-all flex items-center gap-2">
+              <button onClick={() => fetchData()} className="mb-2 p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-all flex items-center gap-2 shrink-0">
                   <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""}/>
               </button>
           </div>
@@ -411,9 +482,10 @@ export const AdminInterface: React.FC = () => {
                  const carBrand = (order.car?.AdminModel || order.car?.model || '').split(' ')[0];
                  const carModel = (order.car?.AdminModel || order.car?.model || '').split(' ').slice(1).join(' ');
                  const carYear = order.car?.AdminYear || order.car?.year;
+                 const isVanishing = vanishingIds.has(order.id);
 
                  return (
-                 <div key={order.id} className={`transition-all duration-300 border-l-4 ${isExpanded ? 'border-l-indigo-600 ring-1 ring-indigo-600 shadow-xl bg-white relative z-10 rounded-xl my-4' : 'border-l-transparent border-b-4 md:border-b border-slate-100 hover:bg-slate-50'}`}>
+                 <div key={order.id} className={`transition-all duration-500 border-l-4 ${isVanishing ? 'opacity-0 scale-95 h-0 overflow-hidden' : isExpanded ? 'border-l-indigo-600 ring-1 ring-indigo-600 shadow-xl bg-white relative z-10 rounded-xl my-4' : 'border-l-transparent border-b-4 md:border-b border-slate-100 hover:bg-slate-50'}`}>
                      {/* ROW - Responsive Grid */}
                      <div className={`grid grid-cols-1 md:${GRID_COLS} gap-2 md:gap-3 p-4 items-center cursor-pointer text-[10px]`} onClick={() => !isEditing && setExpandedId(expandedId === order.id ? null : order.id)}>
                          
@@ -694,26 +766,48 @@ export const AdminInterface: React.FC = () => {
                                  })}
                              </div>
 
-                             {/* FOOTER ACTIONS */}
-                             <div className="flex flex-wrap md:flex-nowrap justify-end gap-2 md:gap-3 mt-4 md:mt-6 pt-4 border-t border-slate-200">
-                                 {isEditing ? (
-                                     <>
-                                        <button onClick={() => setEditingOrderId(null)} className="px-4 py-2 md:px-6 md:py-3 rounded-xl border border-slate-200 text-slate-500 font-black text-[10px] uppercase hover:bg-slate-50 flex-grow md:flex-grow-0 text-center justify-center">Отмена</button>
-                                        <button onClick={() => saveEditing(order)} className="px-4 py-2 md:px-6 md:py-3 rounded-xl bg-indigo-600 text-white font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-2 flex-grow md:flex-grow-0">{isSubmitting === order.id ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>} Сохранить</button>
-                                     </>
-                                 ) : (
-                                     <>
-                                        {!order.isRefused && !order.readyToBuy && (
-                                            <button onClick={() => startEditing(order)} className="px-3 py-2 md:px-4 md:py-3 rounded-xl border border-indigo-100 text-indigo-600 bg-indigo-50 font-black text-[10px] uppercase hover:bg-indigo-100 flex items-center justify-center gap-2 flex-grow md:flex-grow-0"><Edit2 size={14}/> Изменить</button>
-                                        )}
-                                        {!order.isRefused && (
-                                            <button onClick={() => setAdminModal({ type: 'ANNUL', orderId: order.id })} className="px-3 py-2 md:px-4 md:py-3 rounded-xl border border-red-100 text-red-500 bg-red-50 font-black text-[10px] uppercase hover:bg-red-100 flex items-center justify-center gap-2 flex-grow md:flex-grow-0"><Ban size={14}/> Аннулировать</button>
-                                        )}
-                                        {!order.isRefused && !order.readyToBuy && (
-                                            <button onClick={() => handleFormCP(order.id)} className="px-4 py-2 md:px-8 md:py-3 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase shadow-xl hover:bg-slate-800 transition-all active:scale-95 flex-grow md:flex-grow-0 w-full md:w-auto text-center justify-center">Утвердить КП</button>
-                                        )}
-                                     </>
-                                 )}
+                             {/* FOOTER ACTIONS & WORKFLOW */}
+                             <div className="flex flex-wrap md:flex-nowrap justify-between items-center gap-4 mt-4 md:mt-6 pt-4 border-t border-slate-200">
+                                 {/* WORKFLOW STATUS CONTROL */}
+                                 <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
+                                     <span className="text-[8px] font-black uppercase text-slate-400 ml-2">Статус:</span>
+                                     <select 
+                                        value={order.workflowStatus || 'В обработке'}
+                                        onChange={(e) => SheetService.updateWorkflowStatus(order.id, e.target.value).then(() => fetchData(true))}
+                                        className="bg-slate-50 border-none text-[10px] font-black uppercase text-indigo-600 outline-none focus:ring-0 cursor-pointer rounded-lg px-2 py-1"
+                                     >
+                                         <option value="В обработке">Новый / В обработке</option>
+                                         <option value="КП отправлено">КП отправлено</option>
+                                         <option value="Готов купить">Готов купить</option>
+                                         <option value="Подтверждение от поставщика">Подтверждение от поставщика</option>
+                                         <option value="Ожидает оплаты">Ожидает оплаты</option>
+                                         <option value="В пути">В пути</option>
+                                         <option value="Выполнен">Выполнен</option>
+                                         <option value="Аннулирован">Аннулирован</option>
+                                         <option value="Отказ">Отказ</option>
+                                     </select>
+                                 </div>
+
+                                 <div className="flex flex-wrap md:flex-nowrap justify-end gap-2 md:gap-3 flex-grow">
+                                     {isEditing ? (
+                                         <>
+                                            <button onClick={() => setEditingOrderId(null)} className="px-4 py-2 md:px-6 md:py-3 rounded-xl border border-slate-200 text-slate-500 font-black text-[10px] uppercase hover:bg-slate-50 flex-grow md:flex-grow-0 text-center justify-center">Отмена</button>
+                                            <button onClick={() => saveEditing(order)} className="px-4 py-2 md:px-6 md:py-3 rounded-xl bg-indigo-600 text-white font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-2 flex-grow md:flex-grow-0">{isSubmitting === order.id ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>} Сохранить</button>
+                                         </>
+                                     ) : (
+                                         <>
+                                            {!order.isRefused && !order.isProcessed && (
+                                                <button onClick={() => startEditing(order)} className="px-3 py-2 md:px-4 md:py-3 rounded-xl border border-indigo-100 text-indigo-600 bg-indigo-50 font-black text-[10px] uppercase hover:bg-indigo-100 flex items-center justify-center gap-2 flex-grow md:flex-grow-0"><Edit2 size={14}/> Изменить</button>
+                                            )}
+                                            {!order.isRefused && (
+                                                <button onClick={() => setAdminModal({ type: 'ANNUL', orderId: order.id })} className="px-3 py-2 md:px-4 md:py-3 rounded-xl border border-red-100 text-red-500 bg-red-50 font-black text-[10px] uppercase hover:bg-red-100 flex items-center justify-center gap-2 flex-grow md:flex-grow-0"><Ban size={14}/> Аннулировать</button>
+                                            )}
+                                            {!order.isRefused && !order.isProcessed && (
+                                                <button onClick={() => handleFormCP(order.id)} className="px-4 py-2 md:px-8 md:py-3 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase shadow-xl hover:bg-slate-800 transition-all active:scale-95 flex-grow md:flex-grow-0 w-full md:w-auto text-center justify-center">Утвердить КП</button>
+                                            )}
+                                         </>
+                                     )}
+                                 </div>
                              </div>
                          </div>
                      )}
